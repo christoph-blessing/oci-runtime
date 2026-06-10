@@ -1,5 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
+use nix::mount::{MsFlags, mount};
 use nix::sched::{CloneFlags, clone};
 
 const STACK_SIZE: usize = 1024 * 1024;
@@ -15,6 +16,15 @@ fn main() {
     let signal = Option::None;
     let mut stack = vec![0u8; STACK_SIZE];
     let cb = Box::new(|| {
+        mount(
+            None::<&str>,
+            "/",
+            None::<&str>,
+            MsFlags::MS_PRIVATE | MsFlags::MS_REC,
+            None::<&str>,
+        )
+        .expect("failed to make mounts private");
+
         loop {
             sleep(Duration::from_secs(1));
         }
