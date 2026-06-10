@@ -1,9 +1,10 @@
 use std::fs::{create_dir, remove_dir};
+use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::{thread::sleep, time::Duration};
 
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
-use nix::unistd::{chdir, pivot_root};
+use nix::unistd::{chdir, close, pipe, pivot_root, read, write};
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -17,7 +18,17 @@ fn main() {
         | CloneFlags::CLONE_NEWUTS;
     let signal = Option::None;
     let mut stack = vec![0u8; STACK_SIZE];
+    let (read_fd, write_fd) = pipe().expect("failed to create pipe");
+    let read_fd = read_fd.into_raw_fd();
+    let write_fd = write_fd.into_raw_fd();
+
     let cb = Box::new(|| {
+        close(write_fd).expect("failed to close write_fd in child");
+        let mut buffer = vec![0u8; 1];
+        let borrowed = unsafe { BorrowedFd::borrow_raw(read_fd) };
+        read(borrowed, &mut buffer).expect("failed to read from pipe");
+        close(read_fd).expect("failed to close read_fd in child");
+
         mount(
             None::<&str>,
             "/",
@@ -50,6 +61,12 @@ fn main() {
     });
 
     let pid = unsafe { clone(cb, &mut stack, flags, signal) }.expect("failed to clone process");
+
+    close(read_fd).expect("failed to close read_fd in parent");
+    let mut buffer = vec![0u8; 1];
+    let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };
+    write(borrowed, &mut buffer).expect("failed to write to pipe");
+    close(write_fd).expect("failed to close write_fd in parent");
 
     println!("{pid}")
 }
