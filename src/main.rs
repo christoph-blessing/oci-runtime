@@ -71,6 +71,46 @@ fn main() {
         )
         .expect("failed to mount sysfs");
 
+        fs::File::create("/dev/null").expect("failed to create /dev/null");
+        mount(
+            Some("/old_root/dev/null"),
+            "/dev/null",
+            None::<&str>,
+            MsFlags::MS_BIND,
+            None::<&str>,
+        )
+        .expect("failed to mount /dev/null");
+
+        fs::File::create("/dev/zero").expect("failed to create /dev/zero");
+        mount(
+            Some("/old_root/dev/zero"),
+            "/dev/zero",
+            None::<&str>,
+            MsFlags::MS_BIND,
+            None::<&str>,
+        )
+        .expect("failed to mount /dev/zero");
+
+        fs::File::create("/dev/urandom").expect("failed to create /dev/urandom");
+        mount(
+            Some("/old_root/dev/urandom"),
+            "/dev/urandom",
+            None::<&str>,
+            MsFlags::MS_BIND,
+            None::<&str>,
+        )
+        .expect("failed to mount /dev/urandom");
+
+        fs::File::create("/dev/tty").expect("failed to create /dev/tty");
+        mount(
+            Some("/old_root/dev/tty"),
+            "/dev/urandom",
+            None::<&str>,
+            MsFlags::MS_BIND,
+            None::<&str>,
+        )
+        .expect("failed to mount /dev/tty");
+
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
