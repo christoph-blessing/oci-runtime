@@ -52,6 +52,16 @@ fn main() {
         fs::create_dir(old_root).expect("failed to create old_root");
         chdir("/").expect("failed to change current working directory");
         pivot_root(new_root, old_root).expect("failed to pivot root");
+
+        mount(
+            Some("proc"),
+            "/proc",
+            Some("proc"),
+            MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
+            None::<&str>,
+        )
+        .expect("failed to mount proc");
+
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
