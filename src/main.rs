@@ -1,10 +1,12 @@
+use std::ffi::CStr;
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
-use std::{thread::sleep, time::Duration};
 
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
-use nix::unistd::{chdir, close, getgid, getuid, pipe, pivot_root, read, write};
+use nix::sys::signal::Signal;
+use nix::sys::wait::waitpid;
+use nix::unistd::{chdir, close, execve, getgid, getuid, pipe, pivot_root, read, write};
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -16,7 +18,6 @@ fn main() {
         | CloneFlags::CLONE_NEWNS
         | CloneFlags::CLONE_NEWUSER
         | CloneFlags::CLONE_NEWUTS;
-    let signal = Option::None;
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -114,12 +115,13 @@ fn main() {
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
-        loop {
-            sleep(Duration::from_secs(1));
-        }
+        execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], &[])
+            .expect("failed to replace current process");
+        0
     });
 
-    let pid = unsafe { clone(cb, &mut stack, flags, signal) }.expect("failed to clone process");
+    let pid = unsafe { clone(cb, &mut stack, flags, Some(Signal::SIGCHLD as i32)) }
+        .expect("failed to clone process");
     close(read_fd).expect("failed to close read_fd in parent");
 
     fs::write(
@@ -139,5 +141,5 @@ fn main() {
     write(borrowed, &mut buffer).expect("failed to write to pipe");
     close(write_fd).expect("failed to close write_fd in parent");
 
-    println!("{pid}")
+    waitpid(pid, None).expect("failed to wait for child");
 }
