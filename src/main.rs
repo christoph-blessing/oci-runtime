@@ -6,7 +6,9 @@ use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
-use nix::unistd::{chdir, close, execve, getgid, getuid, pipe, pivot_root, read, write};
+use nix::unistd::{
+    chdir, close, execve, getgid, getuid, pipe, pivot_root, read, sethostname, write,
+};
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -114,6 +116,8 @@ fn main() {
 
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
+
+        sethostname("container").expect("failed to set hostname");
 
         execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], &[])
             .expect("failed to replace current process");
