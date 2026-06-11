@@ -62,6 +62,15 @@ fn main() {
         )
         .expect("failed to mount proc");
 
+        mount(
+            Some("sysfs"),
+            "/sys",
+            Some("sysfs"),
+            MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
+            None::<&str>,
+        )
+        .expect("failed to mount sysfs");
+
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
