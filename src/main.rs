@@ -9,6 +9,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     chdir, close, execve, getgid, getuid, pipe, pivot_root, read, sethostname, write,
 };
+use serde_json::Value;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -148,4 +149,11 @@ fn start_container() {
     waitpid(pid, None).expect("failed to wait for child");
 }
 
-fn main() {}
+fn main() {
+    let config_path = std::env::args()
+        .nth(1)
+        .expect("usage: oci-runtime <config_path>");
+    let config = fs::read_to_string(config_path).expect("failed to read config");
+    let parsed: Value = serde_json::from_str(&config).expect("failed to parse config");
+    println!("{}", parsed)
+}
