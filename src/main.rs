@@ -9,18 +9,28 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     chdir, close, execve, getgid, getuid, pipe, pivot_root, read, sethostname, write,
 };
-use serde_json::Value;
+use serde::Deserialize;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container() {
-    let flags = CloneFlags::CLONE_NEWPID
-        | CloneFlags::CLONE_NEWCGROUP
-        | CloneFlags::CLONE_NEWIPC
-        | CloneFlags::CLONE_NEWNET
-        | CloneFlags::CLONE_NEWNS
-        | CloneFlags::CLONE_NEWUSER
-        | CloneFlags::CLONE_NEWUTS;
+fn start_container(container: Container) {
+    let mut flags = CloneFlags::empty();
+    for namespace in container.linux.namespaces {
+        let flag = match namespace.kind {
+            NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
+            NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
+            NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
+            NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
+            NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
+            NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
+            NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
+        };
+        flags |= flag;
+    }
+
+    // TODO: Remove this once mounts are dynamic
+    flags |= CloneFlags::CLONE_NEWNET;
+
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -149,11 +159,45 @@ fn start_container() {
     waitpid(pid, None).expect("failed to wait for child");
 }
 
+#[derive(Debug, Deserialize)]
+enum NamespaceKind {
+    #[serde(rename = "pid")]
+    Pid,
+    #[serde(rename = "network")]
+    Network,
+    #[serde(rename = "ipc")]
+    Ipc,
+    #[serde(rename = "uts")]
+    Uts,
+    #[serde(rename = "mount")]
+    Mount,
+    #[serde(rename = "cgroup")]
+    Cgroup,
+    #[serde(rename = "user")]
+    User,
+}
+
+#[derive(Debug, Deserialize)]
+struct Namespace {
+    #[serde(rename = "type")]
+    kind: NamespaceKind,
+}
+
+#[derive(Debug, Deserialize)]
+struct Linux {
+    namespaces: Vec<Namespace>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Container {
+    linux: Linux,
+}
+
 fn main() {
     let config_path = std::env::args()
         .nth(1)
         .expect("usage: oci-runtime <config_path>");
     let config = fs::read_to_string(config_path).expect("failed to read config");
-    let parsed: Value = serde_json::from_str(&config).expect("failed to parse config");
-    println!("{}", parsed)
+    let container: Container = serde_json::from_str(&config).expect("failed to parse config");
+    start_container(container);
 }
