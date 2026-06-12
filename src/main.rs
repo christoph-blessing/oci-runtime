@@ -1,6 +1,7 @@
 use std::ffi::CStr;
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
+use std::path::PathBuf;
 
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
@@ -52,20 +53,19 @@ fn start_container(container: Container) {
         )
         .expect("failed to make mounts private");
 
-        let new_root = "/tmp/rootfs";
-        let old_root = "/tmp/rootfs/old_root";
+        let old_root = container.root.path.join("old_root");
         let old_root_after_pivot = "/old_root";
         mount(
-            Some(new_root),
-            new_root,
+            Some(&container.root.path),
+            &container.root.path,
             None::<&str>,
             MsFlags::MS_BIND,
             None::<&str>,
         )
         .expect("failed to bind mount new_root");
-        fs::create_dir(old_root).expect("failed to create old_root");
+        fs::create_dir(&old_root).expect("failed to create old_root");
         chdir("/").expect("failed to change current working directory");
-        pivot_root(new_root, old_root).expect("failed to pivot root");
+        pivot_root(&container.root.path, &old_root).expect("failed to pivot root");
 
         mount(
             Some("proc"),
@@ -130,6 +130,17 @@ fn start_container(container: Container) {
 
         sethostname("container").expect("failed to set hostname");
 
+        if container.root.readonly == Some(true) {
+            mount(
+                None::<&str>,
+                "/",
+                None::<&str>,
+                MsFlags::MS_REMOUNT | MsFlags::MS_BIND | MsFlags::MS_RDONLY,
+                None::<&str>,
+            )
+            .expect("failed to remount / as read only");
+        }
+
         execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], &[])
             .expect("failed to replace current process");
         0
@@ -157,6 +168,12 @@ fn start_container(container: Container) {
     close(write_fd).expect("failed to close write_fd in parent");
 
     waitpid(pid, None).expect("failed to wait for child");
+}
+
+#[derive(Debug, Deserialize)]
+struct Root {
+    path: PathBuf,
+    readonly: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,14 +207,19 @@ struct Linux {
 
 #[derive(Debug, Deserialize)]
 struct Container {
+    root: Root,
     linux: Linux,
 }
 
 fn main() {
-    let config_path = std::env::args()
-        .nth(1)
-        .expect("usage: oci-runtime <config_path>");
+    let bundle_path = PathBuf::from(
+        std::env::args()
+            .nth(1)
+            .expect("usage: oci-runtime <bundle_path>"),
+    );
+    let config_path = bundle_path.join("config.json");
     let config = fs::read_to_string(config_path).expect("failed to read config");
-    let container: Container = serde_json::from_str(&config).expect("failed to parse config");
+    let mut container: Container = serde_json::from_str(&config).expect("failed to parse config");
+    container.root.path = bundle_path.join(container.root.path);
     start_container(container);
 }
