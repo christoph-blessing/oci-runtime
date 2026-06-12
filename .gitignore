@@ -1,5 +1,6 @@
 .direnv/
 .envrc
+config.json
 
 
 # Added by cargo

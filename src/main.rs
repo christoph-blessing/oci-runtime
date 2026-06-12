@@ -12,7 +12,7 @@ use nix::unistd::{
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn main() {
+fn start_container() {
     let flags = CloneFlags::CLONE_NEWPID
         | CloneFlags::CLONE_NEWCGROUP
         | CloneFlags::CLONE_NEWIPC
@@ -147,3 +147,5 @@ fn main() {
 
     waitpid(pid, None).expect("failed to wait for child");
 }
+
+fn main() {}
