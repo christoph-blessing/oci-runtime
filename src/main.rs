@@ -14,9 +14,9 @@ use serde::Deserialize;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container(container: Container) {
+fn start_container(config: Config) {
     let mut flags = CloneFlags::empty();
-    for namespace in container.linux.namespaces {
+    for namespace in config.linux.namespaces {
         let flag = match namespace.kind {
             NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
             NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
@@ -53,11 +53,11 @@ fn start_container(container: Container) {
         )
         .expect("failed to make mounts private");
 
-        let old_root = container.root.path.join("old_root");
+        let old_root = config.root.path.join("old_root");
         let old_root_after_pivot = "/old_root";
         mount(
-            Some(&container.root.path),
-            &container.root.path,
+            Some(&config.root.path),
+            &config.root.path,
             None::<&str>,
             MsFlags::MS_BIND,
             None::<&str>,
@@ -65,7 +65,7 @@ fn start_container(container: Container) {
         .expect("failed to bind mount new_root");
         fs::create_dir(&old_root).expect("failed to create old_root");
         chdir("/").expect("failed to change current working directory");
-        pivot_root(&container.root.path, &old_root).expect("failed to pivot root");
+        pivot_root(&config.root.path, &old_root).expect("failed to pivot root");
 
         mount(
             Some("proc"),
@@ -130,7 +130,7 @@ fn start_container(container: Container) {
 
         sethostname("container").expect("failed to set hostname");
 
-        if container.root.readonly == Some(true) {
+        if config.root.readonly == Some(true) {
             mount(
                 None::<&str>,
                 "/",
@@ -171,7 +171,7 @@ fn start_container(container: Container) {
 }
 
 #[derive(Debug, Deserialize)]
-struct Root {
+struct RootConfig {
     path: PathBuf,
     readonly: Option<bool>,
 }
@@ -189,28 +189,28 @@ enum NamespaceKind {
 }
 
 #[derive(Debug, Deserialize)]
-struct Namespace {
+struct NamespaceConfig {
     #[serde(rename = "type")]
     kind: NamespaceKind,
 }
 
 #[derive(Debug, Deserialize)]
-struct Mount {
+struct MountConfig {
     destination: PathBuf,
     source: Option<String>,
     options: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Linux {
-    namespaces: Vec<Namespace>,
+struct LinuxConfig {
+    namespaces: Vec<NamespaceConfig>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Container {
-    root: Root,
-    mounts: Option<Vec<Mount>>,
-    linux: Linux,
+struct Config {
+    root: RootConfig,
+    mounts: Option<Vec<MountConfig>>,
+    linux: LinuxConfig,
 }
 
 fn main() {
@@ -220,8 +220,8 @@ fn main() {
             .expect("usage: oci-runtime <bundle_path>"),
     );
     let config_path = bundle_path.join("config.json");
-    let config = fs::read_to_string(config_path).expect("failed to read config");
-    let mut container: Container = serde_json::from_str(&config).expect("failed to parse config");
-    container.root.path = bundle_path.join(container.root.path);
-    start_container(container);
+    let config_string = fs::read_to_string(config_path).expect("failed to read config");
+    let mut config: Config = serde_json::from_str(&config_string).expect("failed to parse config");
+    config.root.path = bundle_path.join(config.root.path);
+    start_container(config);
 }
