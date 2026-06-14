@@ -63,13 +63,10 @@ fn start_container(config: Config) {
             None::<&str>,
         )
         .expect("failed to bind mount new_root");
-        fs::create_dir(&old_root).expect("failed to create old_root");
-        chdir("/").expect("failed to change current working directory");
-        pivot_root(&config.root.path, &old_root).expect("failed to pivot root");
 
         mount(
             Some("proc"),
-            "/proc",
+            &config.root.path.join("proc"),
             Some("proc"),
             MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
             None::<&str>,
@@ -78,12 +75,16 @@ fn start_container(config: Config) {
 
         mount(
             Some("sysfs"),
-            "/sys",
+            &config.root.path.join("sys"),
             Some("sysfs"),
             MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
             None::<&str>,
         )
         .expect("failed to mount sysfs");
+
+        fs::create_dir(&old_root).expect("failed to create old_root");
+        chdir("/").expect("failed to change current working directory");
+        pivot_root(&config.root.path, &old_root).expect("failed to pivot root");
 
         fs::File::create("/dev/null").expect("failed to create /dev/null");
         mount(
