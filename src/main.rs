@@ -82,49 +82,23 @@ fn start_container(config: Config) {
         )
         .expect("failed to mount sysfs");
 
+        for path in ["dev/null", "dev/zero", "dev/urandom", "dev/tty"] {
+            let destination = &config.root.path.join(path);
+            fs::File::create(destination)
+                .unwrap_or_else(|e| panic!("failed to create {}: {}", destination.display(), e));
+            mount(
+                Some(format!("/{}", path).as_str()),
+                destination,
+                None::<&str>,
+                MsFlags::MS_BIND,
+                None::<&str>,
+            )
+            .unwrap_or_else(|e| panic!("failed to mount {}: {}", destination.display(), e));
+        }
+
         fs::create_dir(&old_root).expect("failed to create old_root");
         chdir("/").expect("failed to change current working directory");
         pivot_root(&config.root.path, &old_root).expect("failed to pivot root");
-
-        fs::File::create("/dev/null").expect("failed to create /dev/null");
-        mount(
-            Some("/old_root/dev/null"),
-            "/dev/null",
-            None::<&str>,
-            MsFlags::MS_BIND,
-            None::<&str>,
-        )
-        .expect("failed to mount /dev/null");
-
-        fs::File::create("/dev/zero").expect("failed to create /dev/zero");
-        mount(
-            Some("/old_root/dev/zero"),
-            "/dev/zero",
-            None::<&str>,
-            MsFlags::MS_BIND,
-            None::<&str>,
-        )
-        .expect("failed to mount /dev/zero");
-
-        fs::File::create("/dev/urandom").expect("failed to create /dev/urandom");
-        mount(
-            Some("/old_root/dev/urandom"),
-            "/dev/urandom",
-            None::<&str>,
-            MsFlags::MS_BIND,
-            None::<&str>,
-        )
-        .expect("failed to mount /dev/urandom");
-
-        fs::File::create("/dev/tty").expect("failed to create /dev/tty");
-        mount(
-            Some("/old_root/dev/tty"),
-            "/dev/tty",
-            None::<&str>,
-            MsFlags::MS_BIND,
-            None::<&str>,
-        )
-        .expect("failed to mount /dev/tty");
 
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
