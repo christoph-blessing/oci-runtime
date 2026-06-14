@@ -29,9 +29,6 @@ fn start_container(config: Config) {
         flags |= flag;
     }
 
-    // TODO: Remove this once mounts are dynamic
-    flags |= CloneFlags::CLONE_NEWNET;
-
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -64,24 +61,6 @@ fn start_container(config: Config) {
         )
         .expect("failed to bind mount new_root");
 
-        mount(
-            Some("proc"),
-            &config.root.path.join("proc"),
-            Some("proc"),
-            MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
-            None::<&str>,
-        )
-        .expect("failed to mount proc");
-
-        mount(
-            Some("sysfs"),
-            &config.root.path.join("sys"),
-            Some("sysfs"),
-            MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
-            None::<&str>,
-        )
-        .expect("failed to mount sysfs");
-
         for path in ["dev/null", "dev/zero", "dev/urandom", "dev/tty"] {
             let destination = &config.root.path.join(path);
             fs::File::create(destination)
@@ -94,6 +73,47 @@ fn start_container(config: Config) {
                 None::<&str>,
             )
             .unwrap_or_else(|e| panic!("failed to mount {}: {}", destination.display(), e));
+        }
+
+        if let Some(mounts) = &config.mounts {
+            for mount_config in mounts {
+                let destination = config.root.path.join(
+                    &mount_config
+                        .destination
+                        .strip_prefix("/")
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "failed to strip prefix from {}: {}",
+                                mount_config.destination.display(),
+                                e
+                            )
+                        }),
+                );
+                fs::create_dir_all(&destination).unwrap_or_else(|e| {
+                    panic!("failed to create: {}: {}", destination.display(), e)
+                });
+                if mount_config.kind.as_deref() == Some("cgroup") {
+                    mount(
+                        Some(&mount_config.destination),
+                        &destination,
+                        None::<&str>,
+                        MsFlags::MS_BIND | mount_config.flags(),
+                        None::<&str>,
+                    )
+                    .expect("failed to mount cgroup");
+                } else {
+                    mount(
+                        mount_config.source.as_deref(),
+                        &destination,
+                        mount_config.kind.as_deref(),
+                        mount_config.flags(),
+                        None::<&str>,
+                    )
+                    .unwrap_or_else(|e| {
+                        panic!("failed to mount: {}: {}", destination.display(), e)
+                    });
+                }
+            }
         }
 
         fs::create_dir(&old_root).expect("failed to create old_root");
