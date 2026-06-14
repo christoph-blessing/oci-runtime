@@ -177,20 +177,14 @@ struct Root {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum NamespaceKind {
-    #[serde(rename = "pid")]
     Pid,
-    #[serde(rename = "network")]
     Network,
-    #[serde(rename = "ipc")]
     Ipc,
-    #[serde(rename = "uts")]
     Uts,
-    #[serde(rename = "mount")]
     Mount,
-    #[serde(rename = "cgroup")]
     Cgroup,
-    #[serde(rename = "user")]
     User,
 }
 
@@ -201,6 +195,13 @@ struct Namespace {
 }
 
 #[derive(Debug, Deserialize)]
+struct Mount {
+    destination: PathBuf,
+    source: Option<String>,
+    options: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
 struct Linux {
     namespaces: Vec<Namespace>,
 }
@@ -208,6 +209,7 @@ struct Linux {
 #[derive(Debug, Deserialize)]
 struct Container {
     root: Root,
+    mounts: Option<Vec<Mount>>,
     linux: Linux,
 }
 
