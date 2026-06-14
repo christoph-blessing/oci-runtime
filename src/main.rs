@@ -223,5 +223,12 @@ fn main() {
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
     let mut config: Config = serde_json::from_str(&config_string).expect("failed to parse config");
     config.root.path = bundle_path.join(config.root.path);
+
+    if let Some(mounts) = &mut config.mounts {
+        for mount in mounts {
+            mount.destination = PathBuf::from("/").join(mount.destination.clone());
+        }
+    }
+
     start_container(config);
 }
