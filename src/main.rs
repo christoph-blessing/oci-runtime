@@ -15,20 +15,6 @@ use serde::Deserialize;
 const STACK_SIZE: usize = 1024 * 1024;
 
 fn start_container(config: Config) {
-    let mut flags = CloneFlags::empty();
-    for namespace in config.linux.namespaces {
-        let flag = match namespace.kind {
-            NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
-            NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
-            NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
-            NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
-            NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
-            NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
-            NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
-        };
-        flags |= flag;
-    }
-
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -141,8 +127,15 @@ fn start_container(config: Config) {
         0
     });
 
-    let pid = unsafe { clone(cb, &mut stack, flags, Some(Signal::SIGCHLD as i32)) }
-        .expect("failed to clone process");
+    let pid = unsafe {
+        clone(
+            cb,
+            &mut stack,
+            config.linux.clone_flags(),
+            Some(Signal::SIGCHLD as i32),
+        )
+    }
+    .expect("failed to clone process");
     close(read_fd).expect("failed to close read_fd in parent");
 
     fs::write(
@@ -187,6 +180,20 @@ enum NamespaceKind {
 struct NamespaceConfig {
     #[serde(rename = "type")]
     kind: NamespaceKind,
+}
+
+impl NamespaceConfig {
+    fn flag(&self) -> CloneFlags {
+        match self.kind {
+            NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
+            NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
+            NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
+            NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
+            NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
+            NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
+            NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,6 +261,16 @@ impl MountConfig {
 #[derive(Debug, Deserialize)]
 struct LinuxConfig {
     namespaces: Vec<NamespaceConfig>,
+}
+
+impl LinuxConfig {
+    fn clone_flags(&self) -> CloneFlags {
+        let mut flags = CloneFlags::empty();
+        for namespace in &self.namespaces {
+            flags |= namespace.flag();
+        }
+        flags
+    }
 }
 
 #[derive(Debug, Deserialize)]
