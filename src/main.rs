@@ -197,6 +197,8 @@ struct NamespaceConfig {
 #[derive(Debug, Deserialize)]
 struct MountConfig {
     destination: PathBuf,
+    #[serde(rename = "type")]
+    kind: Option<String>,
     source: Option<String>,
     options: Option<Vec<String>>,
 }
