@@ -119,7 +119,7 @@ fn start_container(config: Config) {
         fs::File::create("/dev/tty").expect("failed to create /dev/tty");
         mount(
             Some("/old_root/dev/tty"),
-            "/dev/urandom",
+            "/dev/tty",
             None::<&str>,
             MsFlags::MS_BIND,
             None::<&str>,
