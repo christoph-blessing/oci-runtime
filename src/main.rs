@@ -274,7 +274,9 @@ impl LinuxConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Config {
+    oci_version: String,
     root: RootConfig,
     mounts: Option<Vec<MountConfig>>,
     linux: LinuxConfig,
