@@ -139,29 +139,21 @@ fn start_container(config: Config) {
     close(read_fd).expect("failed to close read_fd in parent");
 
     if let Some(uid_mappings) = &config.linux.uid_mappings {
-        let mut uid_map_contents = String::new();
-        for uid_mapping in uid_mappings {
-            uid_map_contents.push_str(&format!(
-                "{} {} {}\n",
-                uid_mapping.container_id, uid_mapping.host_id, uid_mapping.size
-            ));
-        }
-        fs::write(format!("/proc/{}/uid_map", pid), uid_map_contents)
-            .expect("failed to write to uid_map");
+        fs::write(
+            format!("/proc/{}/uid_map", pid),
+            create_id_map_contents(uid_mappings),
+        )
+        .expect("failed to write to uid_map");
     }
 
     if let Some(gid_mappings) = &config.linux.gid_mappings {
         fs::write(format!("/proc/{}/setgroups", pid), "deny")
             .expect("failed to write to setgroups");
-        let mut gid_map_contents = String::new();
-        for gid_mapping in gid_mappings {
-            gid_map_contents.push_str(&format!(
-                "{} {} {}\n",
-                gid_mapping.container_id, gid_mapping.host_id, gid_mapping.size,
-            ));
-        }
-        fs::write(format!("/proc/{}/gid_map", pid), gid_map_contents)
-            .expect("failed to write to gid_map");
+        fs::write(
+            format!("/proc/{}/gid_map", pid),
+            create_id_map_contents(gid_mappings),
+        )
+        .expect("failed to write to gid_map");
     }
 
     let mut buffer = vec![0u8; 1];
@@ -170,6 +162,13 @@ fn start_container(config: Config) {
     close(write_fd).expect("failed to close write_fd in parent");
 
     waitpid(pid, None).expect("failed to wait for child");
+}
+
+fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
+    mappings
+        .iter()
+        .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
