@@ -122,6 +122,10 @@ fn start_container(config: Config) {
             .expect("failed to remount / as read only");
         }
 
+        if let Some(process) = &config.process {
+            chdir(&process.cwd)
+                .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
+        }
         let env: Vec<&CStr> = config
             .process
             .as_ref()
@@ -308,6 +312,7 @@ impl LinuxConfig {
 
 #[derive(Debug, Deserialize)]
 struct ProcessConfig {
+    cwd: PathBuf,
     env: Option<Vec<CString>>,
 }
 
