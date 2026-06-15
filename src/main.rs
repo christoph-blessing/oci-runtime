@@ -127,7 +127,12 @@ fn start_container(config: Config) {
                 .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
 
             let mut env_c: Vec<CString> = Vec::new();
+            let mut maybe_path_env: Option<&str> = None;
             if let Some(env) = &process.env {
+                maybe_path_env = env
+                    .iter()
+                    .find(|&s| s.starts_with("PATH="))
+                    .map(|s| &s[5..]);
                 env_c = env
                     .iter()
                     .map(|s| {
@@ -137,7 +142,27 @@ fn start_container(config: Config) {
                     .collect();
             }
             let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
-            execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], envp.as_slice())
+
+            let mut file = process.args[0].clone();
+            if let Some(path_env) = maybe_path_env {
+                if let Some(absolute_file) = path_env
+                    .split(":")
+                    .map(|s| {
+                        let mut p = PathBuf::from(s);
+                        p.push(&file);
+                        p
+                    })
+                    .find(|p| p.exists())
+                {
+                    file = absolute_file
+                        .to_str()
+                        .expect("path is not valid UTF-8")
+                        .to_owned();
+                }
+            }
+            let file_c = CString::new(file).expect("failed to create C string");
+
+            execve::<&CStr, &CStr>(&file_c, &[c"/bin/sh"], envp.as_slice())
                 .expect("failed to replace current process");
         }
         0
@@ -318,6 +343,7 @@ impl LinuxConfig {
 struct ProcessConfig {
     cwd: PathBuf,
     env: Option<Vec<String>>,
+    args: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
