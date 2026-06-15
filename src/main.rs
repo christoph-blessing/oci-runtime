@@ -125,14 +125,19 @@ fn start_container(config: Config) {
         if let Some(process) = &config.process {
             chdir(&process.cwd)
                 .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
-            let env: Vec<&CStr> = process
-                .env
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .map(|s| s.as_c_str())
-                .collect();
-            execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], env.as_slice())
+
+            let mut env_c: Vec<CString> = Vec::new();
+            if let Some(env) = &process.env {
+                env_c = env
+                    .iter()
+                    .map(|s| {
+                        CString::new(s.as_str())
+                            .unwrap_or_else(|e| panic!("failed to create CString {}: {}", s, e))
+                    })
+                    .collect();
+            }
+            let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
+            execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], envp.as_slice())
                 .expect("failed to replace current process");
         }
         0
@@ -312,7 +317,7 @@ impl LinuxConfig {
 #[derive(Debug, Deserialize)]
 struct ProcessConfig {
     cwd: PathBuf,
-    env: Option<Vec<CString>>,
+    env: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
