@@ -109,7 +109,9 @@ fn start_container(config: Config) {
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
-        sethostname("container").expect("failed to set hostname");
+        if let Some(hostname) = &config.hostname {
+            sethostname(hostname).expect("failed to set hostname");
+        }
 
         if config.root.readonly == Some(true) {
             mount(
@@ -277,6 +279,7 @@ impl LinuxConfig {
 #[serde(rename_all = "camelCase")]
 struct Config {
     oci_version: String,
+    hostname: Option<String>,
     root: RootConfig,
     mounts: Option<Vec<MountConfig>>,
     linux: LinuxConfig,
