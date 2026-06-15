@@ -136,33 +136,41 @@ fn start_container(config: Config) {
                 env_c = env
                     .iter()
                     .map(|s| {
-                        CString::new(s.as_str())
-                            .unwrap_or_else(|e| panic!("failed to create CString {}: {}", s, e))
+                        CString::new(s.as_str()).unwrap_or_else(|e| {
+                            panic!("failed to create C string from {}: {}", s, e)
+                        })
                     })
                     .collect();
             }
             let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
 
-            let mut file = process.args[0].clone();
+            let mut args = process.args.clone();
             if let Some(path_env) = maybe_path_env {
                 if let Some(absolute_file) = path_env
                     .split(":")
                     .map(|s| {
                         let mut p = PathBuf::from(s);
-                        p.push(&file);
+                        p.push(&args[0]);
                         p
                     })
                     .find(|p| p.exists())
                 {
-                    file = absolute_file
+                    args[0] = absolute_file
                         .to_str()
-                        .expect("path is not valid UTF-8")
+                        .expect("failed to convert path to string")
                         .to_owned();
                 }
             }
-            let file_c = CString::new(file).expect("failed to create C string");
+            let args_c: Vec<CString> = args
+                .iter()
+                .map(|a| {
+                    CString::new(a.as_str())
+                        .unwrap_or_else(|e| panic!("failed to create C string from {}: {}", a, e))
+                })
+                .collect();
+            let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
 
-            execve::<&CStr, &CStr>(&file_c, &[c"/bin/sh"], envp.as_slice())
+            execve(argv[0], argv.as_slice(), envp.as_slice())
                 .expect("failed to replace current process");
         }
         0
