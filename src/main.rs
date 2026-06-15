@@ -1,4 +1,4 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::PathBuf;
@@ -122,7 +122,15 @@ fn start_container(config: Config) {
             .expect("failed to remount / as read only");
         }
 
-        execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], &[])
+        let env: Vec<&CStr> = config
+            .process
+            .as_ref()
+            .and_then(|p| p.env.as_deref())
+            .unwrap_or_default()
+            .iter()
+            .map(|s| s.as_c_str())
+            .collect();
+        execve::<&CStr, &CStr>(&c"/bin/sh", &[c"/bin/sh"], env.as_slice())
             .expect("failed to replace current process");
         0
     });
@@ -299,12 +307,18 @@ impl LinuxConfig {
 }
 
 #[derive(Debug, Deserialize)]
+struct ProcessConfig {
+    env: Option<Vec<CString>>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Config {
     oci_version: String,
     hostname: Option<String>,
     root: RootConfig,
     mounts: Option<Vec<MountConfig>>,
+    process: Option<ProcessConfig>,
     linux: LinuxConfig,
 }
 
