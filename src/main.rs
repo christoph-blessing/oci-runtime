@@ -47,20 +47,6 @@ fn start_container(config: Config) {
         )
         .expect("failed to bind mount new_root");
 
-        for path in ["dev/null", "dev/zero", "dev/urandom", "dev/tty"] {
-            let destination = &config.root.path.join(path);
-            fs::File::create(destination)
-                .unwrap_or_else(|e| panic!("failed to create {}: {}", destination.display(), e));
-            mount(
-                Some(format!("/{}", path).as_str()),
-                destination,
-                None::<&str>,
-                MsFlags::MS_BIND,
-                None::<&str>,
-            )
-            .unwrap_or_else(|e| panic!("failed to mount {}: {}", destination.display(), e));
-        }
-
         if let Some(mounts) = &config.mounts {
             for mount_config in mounts {
                 let destination = config.root.path.join(
@@ -100,6 +86,20 @@ fn start_container(config: Config) {
                     });
                 }
             }
+        }
+
+        for path in ["dev/null", "dev/zero", "dev/urandom", "dev/tty"] {
+            let destination = &config.root.path.join(path);
+            fs::File::create(destination)
+                .unwrap_or_else(|e| panic!("failed to create {}: {}", destination.display(), e));
+            mount(
+                Some(format!("/{}", path).as_str()),
+                destination,
+                None::<&str>,
+                MsFlags::MS_BIND,
+                None::<&str>,
+            )
+            .unwrap_or_else(|e| panic!("failed to mount {}: {}", destination.display(), e));
         }
 
         fs::create_dir(&old_root).expect("failed to create old_root");
