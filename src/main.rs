@@ -7,9 +7,7 @@ use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
-use nix::unistd::{
-    chdir, close, execve, getgid, getuid, pipe, pivot_root, read, sethostname, write,
-};
+use nix::unistd::{chdir, close, execve, getgid, pipe, pivot_root, read, sethostname, write};
 use serde::Deserialize;
 
 const STACK_SIZE: usize = 1024 * 1024;
@@ -140,11 +138,18 @@ fn start_container(config: Config) {
     .expect("failed to clone process");
     close(read_fd).expect("failed to close read_fd in parent");
 
-    fs::write(
-        format!("/proc/{}/uid_map", pid),
-        format!("0 {} 1", getuid()),
-    )
-    .expect("failed to write to uid_map");
+    if let Some(uid_mappings) = &config.linux.uid_mappings {
+        let mut uid_map_contents = String::new();
+        for uid_mapping in uid_mappings {
+            uid_map_contents.push_str(&format!(
+                "{} {} {}\n",
+                uid_mapping.container_id, uid_mapping.host_id, uid_mapping.size
+            ));
+        }
+        fs::write(format!("/proc/{}/uid_map", pid), uid_map_contents)
+            .expect("failed to write to uid_map");
+    }
+
     fs::write(format!("/proc/{}/setgroups", pid), "deny").expect("failed to write to setgroups");
     fs::write(
         format!("/proc/{}/gid_map", pid),
@@ -261,8 +266,20 @@ impl MountConfig {
 }
 
 #[derive(Debug, Deserialize)]
+struct IdMappingConfig {
+    #[serde(rename = "containerID")]
+    container_id: usize,
+    #[serde(rename = "hostID")]
+    host_id: usize,
+    size: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LinuxConfig {
     namespaces: Vec<NamespaceConfig>,
+    uid_mappings: Option<Vec<IdMappingConfig>>,
+    gid_mappings: Option<Vec<IdMappingConfig>>,
 }
 
 impl LinuxConfig {
