@@ -7,7 +7,7 @@ use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
-use nix::unistd::{chdir, close, execve, getgid, pipe, pivot_root, read, sethostname, write};
+use nix::unistd::{chdir, close, execve, pipe, pivot_root, read, sethostname, write};
 use serde::Deserialize;
 
 const STACK_SIZE: usize = 1024 * 1024;
@@ -150,12 +150,19 @@ fn start_container(config: Config) {
             .expect("failed to write to uid_map");
     }
 
-    fs::write(format!("/proc/{}/setgroups", pid), "deny").expect("failed to write to setgroups");
-    fs::write(
-        format!("/proc/{}/gid_map", pid),
-        format!("0 {} 1", getgid()),
-    )
-    .expect("failed to write to gid_map");
+    if let Some(gid_mappings) = &config.linux.gid_mappings {
+        fs::write(format!("/proc/{}/setgroups", pid), "deny")
+            .expect("failed to write to setgroups");
+        let mut gid_map_contents = String::new();
+        for gid_mapping in gid_mappings {
+            gid_map_contents.push_str(&format!(
+                "{} {} {}\n",
+                gid_mapping.container_id, gid_mapping.host_id, gid_mapping.size,
+            ));
+        }
+        fs::write(format!("/proc/{}/gid_map", pid), gid_map_contents)
+            .expect("failed to write to gid_map");
+    }
 
     let mut buffer = vec![0u8; 1];
     let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };
