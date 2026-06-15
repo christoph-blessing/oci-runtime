@@ -7,7 +7,9 @@ use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
-use nix::unistd::{chdir, close, execve, pipe, pivot_root, read, sethostname, write};
+use nix::unistd::{
+    Gid, Uid, chdir, close, execve, pipe, pivot_root, read, setgid, sethostname, setuid, write,
+};
 use serde::Deserialize;
 
 const STACK_SIZE: usize = 1024 * 1024;
@@ -169,6 +171,9 @@ fn start_container(config: Config) {
                 })
                 .collect();
             let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
+
+            setgid(Gid::from_raw(process.user.gid)).expect("failed to setgid");
+            setuid(Uid::from_raw(process.user.uid)).expect("failed to setuid");
 
             execve(argv[0], argv.as_slice(), envp.as_slice())
                 .expect("failed to replace current process");
@@ -348,10 +353,17 @@ impl LinuxConfig {
 }
 
 #[derive(Debug, Deserialize)]
+struct UserConfig {
+    uid: u32,
+    gid: u32,
+}
+
+#[derive(Debug, Deserialize)]
 struct ProcessConfig {
     cwd: PathBuf,
     env: Option<Vec<String>>,
     args: Vec<String>,
+    user: UserConfig,
 }
 
 #[derive(Debug, Deserialize)]
