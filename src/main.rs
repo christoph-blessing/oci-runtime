@@ -124,6 +124,34 @@ fn start_container(config: Config) {
             .expect("failed to remount / as read only");
         }
 
+        // TODO: Fix container being able reveal masked paths using umount
+        for path in config.linux.masked_paths.clone().unwrap_or_default() {
+            let metadata = fs::metadata(&path);
+            match metadata {
+                Ok(m) if m.is_dir() => {
+                    mount(
+                        Some("tmpfs"),
+                        &path,
+                        Some("tmpfs"),
+                        MsFlags::MS_RDONLY,
+                        None::<&str>,
+                    )
+                    .unwrap_or_else(|e| panic!("failed to mask dir {}: {}", path.display(), e));
+                }
+                Ok(_) => {
+                    mount(
+                        Some("/dev/null"),
+                        &path,
+                        None::<&str>,
+                        MsFlags::MS_BIND,
+                        None::<&str>,
+                    )
+                    .unwrap_or_else(|e| panic!("failed to mask file {}: {}", path.display(), e));
+                }
+                Err(_) => {}
+            }
+        }
+
         if let Some(process) = &config.process {
             chdir(&process.cwd)
                 .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
@@ -340,6 +368,7 @@ struct LinuxConfig {
     namespaces: Vec<NamespaceConfig>,
     uid_mappings: Option<Vec<IdMappingConfig>>,
     gid_mappings: Option<Vec<IdMappingConfig>>,
+    masked_paths: Option<Vec<PathBuf>>,
 }
 
 impl LinuxConfig {
