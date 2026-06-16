@@ -7,6 +7,7 @@ use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
+use nix::sys::prctl::set_no_new_privs;
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
 use nix::unistd::{
@@ -225,6 +226,10 @@ fn start_container(config: Config) {
                 }
             }
 
+            if process.no_new_privileges == Some(true) {
+                set_no_new_privs().expect("failed to set no_new_privs");
+            }
+
             execve(argv[0], argv.as_slice(), envp.as_slice())
                 .expect("failed to replace current process");
         }
@@ -439,12 +444,14 @@ impl CapabilitiesConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ProcessConfig {
     cwd: PathBuf,
     env: Option<Vec<String>>,
     args: Vec<String>,
     user: UserConfig,
     capabilities: Option<CapabilitiesConfig>,
+    no_new_privileges: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
