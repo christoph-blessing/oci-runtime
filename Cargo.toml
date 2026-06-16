@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-nix = { version = "0.31.3", features = ["sched", "mount", "fs", "user", "process", "hostname"] }
+nix = { version = "0.31.3", features = ["sched", "mount", "fs", "user", "process", "hostname", "resource"] }
 serde_json = "1.0.150"
 serde = { version = "1.0", features = ["derive"] }
 caps = { version = "0.5.6", features = ["serde", "serde_support"] }

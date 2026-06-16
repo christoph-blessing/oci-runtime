@@ -8,6 +8,7 @@ use caps::{CapSet, CapsHashSet};
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::prctl::set_no_new_privs;
+use nix::sys::resource::{Resource, setrlimit};
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
 use nix::unistd::{
@@ -178,9 +179,11 @@ fn start_container(config: Config) {
         }
 
         if let Some(process) = &config.process {
+            // Change current working directory
             chdir(&process.cwd)
                 .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
 
+            // Create envp and get PATH environment variable
             let mut env_c: Vec<CString> = Vec::new();
             let mut maybe_path_env: Option<&str> = None;
             if let Some(env) = &process.env {
@@ -199,6 +202,7 @@ fn start_container(config: Config) {
             }
             let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
 
+            // Create argv and try to resolve absolute path to executable
             let mut args = process.args.clone();
             if let Some(path_env) = maybe_path_env {
                 if let Some(absolute_file) = path_env
@@ -225,9 +229,20 @@ fn start_container(config: Config) {
                 .collect();
             let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
 
+            // Set user and group ids
             setgid(Gid::from_raw(process.user.gid)).expect("failed to setgid");
             setuid(Uid::from_raw(process.user.uid)).expect("failed to setuid");
 
+            // Set resource limits
+            if let Some(rlimits) = &process.rlimits {
+                for rlimit in rlimits {
+                    let resource = Resource::from(&rlimit.kind);
+                    setrlimit(resource, rlimit.soft, rlimit.hard)
+                        .unwrap_or_else(|e| panic!("failed to set rlimit {:?}: {}", resource, e));
+                }
+            }
+
+            // Set capabilities
             if let Some(cap_config) = &process.capabilities {
                 let existing_bounding = caps::read(None, CapSet::Bounding)
                     .expect("failed to read bounding capabilities");
@@ -249,10 +264,12 @@ fn start_container(config: Config) {
                 }
             }
 
+            // Prevent process from getting new privileges
             if process.no_new_privileges == Some(true) {
                 set_no_new_privs().expect("failed to set no_new_privs");
             }
 
+            // Replace current process
             execve(argv[0], argv.as_slice(), envp.as_slice())
                 .expect("failed to replace current process");
         }
@@ -467,6 +484,73 @@ impl CapabilitiesConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Clone)]
+enum RlimitKind {
+    #[serde(rename = "RLIMIT_AS")]
+    As,
+    #[serde(rename = "RLIMIT_CORE")]
+    Core,
+    #[serde(rename = "RLIMIT_CPU")]
+    Cpu,
+    #[serde(rename = "RLIMIT_DATA")]
+    Data,
+    #[serde(rename = "RLIMIT_FSIZE")]
+    Fsize,
+    #[serde(rename = "RLIMIT_LOCKS")]
+    Locks,
+    #[serde(rename = "RLIMIT_MEMLOCK")]
+    Memlock,
+    #[serde(rename = "RLIMIT_MSGQUEUE")]
+    Msgqueue,
+    #[serde(rename = "RLIMIT_NICE")]
+    Nice,
+    #[serde(rename = "RLIMIT_NOFILE")]
+    Nofile,
+    #[serde(rename = "RLIMIT_NPROC")]
+    Nproc,
+    #[serde(rename = "RLIMIT_RSS")]
+    Rss,
+    #[serde(rename = "RLIMIT_RTPRIO")]
+    Rtprio,
+    #[serde(rename = "RLIMIT_RTTIME")]
+    Rttime,
+    #[serde(rename = "RLIMIT_SIGPENDING")]
+    Sigpending,
+    #[serde(rename = "RLIMIT_STACK")]
+    Stack,
+}
+
+impl From<&RlimitKind> for Resource {
+    fn from(value: &RlimitKind) -> Self {
+        match value {
+            RlimitKind::As => Resource::RLIMIT_AS,
+            RlimitKind::Core => Resource::RLIMIT_CORE,
+            RlimitKind::Cpu => Resource::RLIMIT_CPU,
+            RlimitKind::Data => Resource::RLIMIT_DATA,
+            RlimitKind::Fsize => Resource::RLIMIT_FSIZE,
+            RlimitKind::Locks => Resource::RLIMIT_LOCKS,
+            RlimitKind::Memlock => Resource::RLIMIT_MEMLOCK,
+            RlimitKind::Msgqueue => Resource::RLIMIT_MSGQUEUE,
+            RlimitKind::Nice => Resource::RLIMIT_NICE,
+            RlimitKind::Nofile => Resource::RLIMIT_NOFILE,
+            RlimitKind::Nproc => Resource::RLIMIT_NPROC,
+            RlimitKind::Rss => Resource::RLIMIT_RSS,
+            RlimitKind::Rtprio => Resource::RLIMIT_RTPRIO,
+            RlimitKind::Rttime => Resource::RLIMIT_RTTIME,
+            RlimitKind::Sigpending => Resource::RLIMIT_SIGPENDING,
+            RlimitKind::Stack => Resource::RLIMIT_STACK,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct RlimitConfig {
+    #[serde(rename = "type")]
+    kind: RlimitKind,
+    soft: u64,
+    hard: u64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessConfig {
@@ -476,6 +560,7 @@ struct ProcessConfig {
     user: UserConfig,
     capabilities: Option<CapabilitiesConfig>,
     no_new_privileges: Option<bool>,
+    rlimits: Option<Vec<RlimitConfig>>,
 }
 
 #[derive(Debug, Deserialize)]
