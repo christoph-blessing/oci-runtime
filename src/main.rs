@@ -3,6 +3,8 @@ use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::PathBuf;
 
+use caps::errors::CapsError;
+use caps::{CapSet, CapsHashSet};
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::signal::Signal;
@@ -124,7 +126,6 @@ fn start_container(config: Config) {
             .expect("failed to remount / as read only");
         }
 
-        // TODO: Fix container being able reveal masked paths using umount
         for path in config.linux.masked_paths.clone().unwrap_or_default() {
             let metadata = fs::metadata(&path);
             match metadata {
@@ -203,6 +204,27 @@ fn start_container(config: Config) {
             setgid(Gid::from_raw(process.user.gid)).expect("failed to setgid");
             setuid(Uid::from_raw(process.user.uid)).expect("failed to setuid");
 
+            if let Some(cap_config) = &process.capabilities {
+                let existing_bounding = caps::read(None, CapSet::Bounding)
+                    .expect("failed to read bounding capabilities");
+                let new_bounding = cap_config.bounding.clone().unwrap_or_default();
+                for capability in existing_bounding.difference(&new_bounding) {
+                    caps::drop(None, CapSet::Bounding, *capability).unwrap_or_else(|e| {
+                        panic!("failed to drop bounding capability {}: {}", capability, e)
+                    });
+                }
+
+                for cset in [
+                    CapSet::Inheritable,
+                    CapSet::Effective,
+                    CapSet::Permitted,
+                    CapSet::Ambient,
+                ] {
+                    set_capabilities(cset, cap_config.get(cset))
+                        .unwrap_or_else(|e| panic!("failed to set cap set {:?}: {}", cset, e));
+                }
+            }
+
             execve(argv[0], argv.as_slice(), envp.as_slice())
                 .expect("failed to replace current process");
         }
@@ -244,6 +266,13 @@ fn start_container(config: Config) {
     close(write_fd).expect("failed to close write_fd in parent");
 
     waitpid(pid, None).expect("failed to wait for child");
+}
+
+fn set_capabilities(cset: CapSet, new_caps: Option<&CapsHashSet>) -> Result<(), CapsError> {
+    match new_caps {
+        Some(capabilities) => caps::set(None, cset, capabilities),
+        None => caps::clear(None, cset),
+    }
 }
 
 fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
@@ -388,11 +417,34 @@ struct UserConfig {
 }
 
 #[derive(Debug, Deserialize)]
+struct CapabilitiesConfig {
+    effective: Option<CapsHashSet>,
+    bounding: Option<CapsHashSet>,
+    inheritable: Option<CapsHashSet>,
+    permitted: Option<CapsHashSet>,
+    ambient: Option<CapsHashSet>,
+}
+
+impl CapabilitiesConfig {
+    fn get(&self, cset: CapSet) -> Option<&CapsHashSet> {
+        let capabilities = match cset {
+            CapSet::Ambient => &self.ambient,
+            CapSet::Bounding => &self.bounding,
+            CapSet::Effective => &self.effective,
+            CapSet::Inheritable => &self.inheritable,
+            CapSet::Permitted => &self.permitted,
+        };
+        capabilities.as_ref()
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct ProcessConfig {
     cwd: PathBuf,
     env: Option<Vec<String>>,
     args: Vec<String>,
     user: UserConfig,
+    capabilities: Option<CapabilitiesConfig>,
 }
 
 #[derive(Debug, Deserialize)]
