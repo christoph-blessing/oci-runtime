@@ -280,7 +280,7 @@ fn start_container(config: Config) {
         clone(
             cb,
             &mut stack,
-            config.linux.clone_flags(),
+            CloneFlags::from(&config.linux),
             Some(Signal::SIGCHLD as i32),
         )
     }
@@ -351,9 +351,9 @@ struct NamespaceConfig {
     kind: NamespaceKind,
 }
 
-impl NamespaceConfig {
-    fn flag(&self) -> CloneFlags {
-        match self.kind {
+impl From<&NamespaceKind> for CloneFlags {
+    fn from(value: &NamespaceKind) -> Self {
+        match value {
             NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
             NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
             NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
@@ -446,11 +446,11 @@ struct LinuxConfig {
     readonly_paths: Option<Vec<PathBuf>>,
 }
 
-impl LinuxConfig {
-    fn clone_flags(&self) -> CloneFlags {
+impl From<&LinuxConfig> for CloneFlags {
+    fn from(value: &LinuxConfig) -> Self {
         let mut flags = CloneFlags::empty();
-        for namespace in &self.namespaces {
-            flags |= namespace.flag();
+        for namespace in &value.namespaces {
+            flags |= CloneFlags::from(&namespace.kind)
         }
         flags
     }
