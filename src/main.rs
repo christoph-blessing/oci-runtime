@@ -154,6 +154,29 @@ fn start_container(config: Config) {
             }
         }
 
+        if let Some(readonly_paths) = &config.linux.readonly_paths {
+            for path in readonly_paths {
+                mount(
+                    Some(path),
+                    path,
+                    None::<&str>,
+                    MsFlags::MS_BIND,
+                    None::<&str>,
+                )
+                .unwrap_or_else(|e| panic!("failed to bind mount {}: {}", path.display(), e));
+                mount(
+                    Some(path),
+                    path,
+                    None::<&str>,
+                    MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+                    None::<&str>,
+                )
+                .unwrap_or_else(|e| {
+                    panic!("failed to remount as read only {}: {}", path.display(), e)
+                });
+            }
+        }
+
         if let Some(process) = &config.process {
             chdir(&process.cwd)
                 .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
@@ -403,6 +426,7 @@ struct LinuxConfig {
     uid_mappings: Option<Vec<IdMappingConfig>>,
     gid_mappings: Option<Vec<IdMappingConfig>>,
     masked_paths: Option<Vec<PathBuf>>,
+    readonly_paths: Option<Vec<PathBuf>>,
 }
 
 impl LinuxConfig {
