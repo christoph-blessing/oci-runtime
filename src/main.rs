@@ -14,11 +14,10 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     Gid, Uid, chdir, close, execve, pipe, pivot_root, read, setgid, sethostname, setuid, write,
 };
-use serde::Deserialize;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container(config: Config) {
+fn start_container(config: raw_config::Config) {
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -320,258 +319,265 @@ fn set_capabilities(cset: CapSet, new_caps: Option<&CapsHashSet>) -> Result<(), 
     }
 }
 
-fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
+fn create_id_map_contents(mappings: &[raw_config::IdMappingConfig]) -> String {
     mappings
         .iter()
         .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
         .collect()
 }
 
-#[derive(Debug, Deserialize)]
-struct RootConfig {
-    path: PathBuf,
-    readonly: Option<bool>,
-}
+mod raw_config {
+    use caps::{CapSet, CapsHashSet};
+    use nix::{mount::MsFlags, sched::CloneFlags, sys::resource::Resource};
+    use serde::Deserialize;
+    use std::path::PathBuf;
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum NamespaceKind {
-    Pid,
-    Network,
-    Ipc,
-    Uts,
-    Mount,
-    Cgroup,
-    User,
-}
-
-#[derive(Debug, Deserialize)]
-struct NamespaceConfig {
-    #[serde(rename = "type")]
-    kind: NamespaceKind,
-}
-
-impl From<&NamespaceKind> for CloneFlags {
-    fn from(value: &NamespaceKind) -> Self {
-        match value {
-            NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
-            NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
-            NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
-            NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
-            NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
-            NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
-            NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
-        }
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Config {
+        oci_version: String,
+        pub hostname: Option<String>,
+        pub root: RootConfig,
+        pub mounts: Option<Vec<MountConfig>>,
+        pub process: Option<ProcessConfig>,
+        pub linux: LinuxConfig,
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct MountConfig {
-    destination: PathBuf,
-    #[serde(rename = "type")]
-    kind: Option<String>,
-    source: Option<String>,
-    options: Option<Vec<String>>,
-}
+    #[derive(Debug, Deserialize)]
+    pub struct RootConfig {
+        pub path: PathBuf,
+        pub readonly: Option<bool>,
+    }
 
-impl MountConfig {
-    fn flags(&self) -> MsFlags {
-        let mut flags = MsFlags::empty();
-        if let Some(options) = &self.options {
-            for option in options {
-                match option.as_str() {
-                    "async" => flags &= !MsFlags::MS_SYNCHRONOUS,
-                    "atime" => flags &= !MsFlags::MS_NOATIME,
-                    "bind" => flags |= MsFlags::MS_BIND,
-                    "defaults" => {}
-                    "dev" => flags &= !MsFlags::MS_NODEV,
-                    "diratime" => flags &= !MsFlags::MS_NODIRATIME,
-                    "dirsync" => flags |= MsFlags::MS_DIRSYNC,
-                    "exec" => flags &= !MsFlags::MS_NOEXEC,
-                    "iversion" => flags |= MsFlags::MS_I_VERSION,
-                    "lazytime" => flags |= MsFlags::MS_LAZYTIME,
-                    "loud" => flags &= !MsFlags::MS_SILENT,
-                    "mand" => flags |= MsFlags::MS_MANDLOCK,
-                    "noatime" => flags |= MsFlags::MS_NOATIME,
-                    "nodev" => flags |= MsFlags::MS_NODEV,
-                    "nodiratime" => flags |= MsFlags::MS_NODIRATIME,
-                    "noexec" => flags |= MsFlags::MS_NOEXEC,
-                    "noiversion" => flags &= !MsFlags::MS_I_VERSION,
-                    "nolazytime" => flags &= !MsFlags::MS_LAZYTIME,
-                    "nomand" => flags &= !MsFlags::MS_MANDLOCK,
-                    "norelatime" => flags &= !MsFlags::MS_RELATIME,
-                    "nostrictatime" => flags &= !MsFlags::MS_STRICTATIME,
-                    "nosuid" => flags |= MsFlags::MS_NOSUID,
-                    "private" => flags |= MsFlags::MS_PRIVATE,
-                    "rbind" => flags |= MsFlags::MS_BIND | MsFlags::MS_REC,
-                    "relatime" => flags |= MsFlags::MS_RELATIME,
-                    "remount" => flags |= MsFlags::MS_REMOUNT,
-                    "ro" => flags |= MsFlags::MS_RDONLY,
-                    "rprivate" => flags |= MsFlags::MS_PRIVATE | MsFlags::MS_REC,
-                    "rshared" => flags |= MsFlags::MS_SHARED | MsFlags::MS_REC,
-                    "rslave" => flags |= MsFlags::MS_SLAVE | MsFlags::MS_REC,
-                    "runbindable" => flags |= MsFlags::MS_UNBINDABLE | MsFlags::MS_REC,
-                    "rw" => flags &= !MsFlags::MS_RDONLY,
-                    "shared" => flags |= MsFlags::MS_SHARED,
-                    "silent" => flags |= MsFlags::MS_SILENT,
-                    "slave" => flags |= MsFlags::MS_SLAVE,
-                    "strictatime" => flags |= MsFlags::MS_STRICTATIME,
-                    "suid" => flags &= !MsFlags::MS_NOSUID,
-                    "sync" => flags |= MsFlags::MS_SYNCHRONOUS,
-                    "unbindable" => flags |= MsFlags::MS_UNBINDABLE,
-                    _ => {}
+    #[derive(Debug, Deserialize)]
+    pub struct MountConfig {
+        pub destination: PathBuf,
+        #[serde(rename = "type")]
+        pub kind: Option<String>,
+        pub source: Option<String>,
+        pub options: Option<Vec<String>>,
+    }
+
+    impl MountConfig {
+        pub fn flags(&self) -> MsFlags {
+            let mut flags = MsFlags::empty();
+            if let Some(options) = &self.options {
+                for option in options {
+                    match option.as_str() {
+                        "async" => flags &= !MsFlags::MS_SYNCHRONOUS,
+                        "atime" => flags &= !MsFlags::MS_NOATIME,
+                        "bind" => flags |= MsFlags::MS_BIND,
+                        "defaults" => {}
+                        "dev" => flags &= !MsFlags::MS_NODEV,
+                        "diratime" => flags &= !MsFlags::MS_NODIRATIME,
+                        "dirsync" => flags |= MsFlags::MS_DIRSYNC,
+                        "exec" => flags &= !MsFlags::MS_NOEXEC,
+                        "iversion" => flags |= MsFlags::MS_I_VERSION,
+                        "lazytime" => flags |= MsFlags::MS_LAZYTIME,
+                        "loud" => flags &= !MsFlags::MS_SILENT,
+                        "mand" => flags |= MsFlags::MS_MANDLOCK,
+                        "noatime" => flags |= MsFlags::MS_NOATIME,
+                        "nodev" => flags |= MsFlags::MS_NODEV,
+                        "nodiratime" => flags |= MsFlags::MS_NODIRATIME,
+                        "noexec" => flags |= MsFlags::MS_NOEXEC,
+                        "noiversion" => flags &= !MsFlags::MS_I_VERSION,
+                        "nolazytime" => flags &= !MsFlags::MS_LAZYTIME,
+                        "nomand" => flags &= !MsFlags::MS_MANDLOCK,
+                        "norelatime" => flags &= !MsFlags::MS_RELATIME,
+                        "nostrictatime" => flags &= !MsFlags::MS_STRICTATIME,
+                        "nosuid" => flags |= MsFlags::MS_NOSUID,
+                        "private" => flags |= MsFlags::MS_PRIVATE,
+                        "rbind" => flags |= MsFlags::MS_BIND | MsFlags::MS_REC,
+                        "relatime" => flags |= MsFlags::MS_RELATIME,
+                        "remount" => flags |= MsFlags::MS_REMOUNT,
+                        "ro" => flags |= MsFlags::MS_RDONLY,
+                        "rprivate" => flags |= MsFlags::MS_PRIVATE | MsFlags::MS_REC,
+                        "rshared" => flags |= MsFlags::MS_SHARED | MsFlags::MS_REC,
+                        "rslave" => flags |= MsFlags::MS_SLAVE | MsFlags::MS_REC,
+                        "runbindable" => flags |= MsFlags::MS_UNBINDABLE | MsFlags::MS_REC,
+                        "rw" => flags &= !MsFlags::MS_RDONLY,
+                        "shared" => flags |= MsFlags::MS_SHARED,
+                        "silent" => flags |= MsFlags::MS_SILENT,
+                        "slave" => flags |= MsFlags::MS_SLAVE,
+                        "strictatime" => flags |= MsFlags::MS_STRICTATIME,
+                        "suid" => flags &= !MsFlags::MS_NOSUID,
+                        "sync" => flags |= MsFlags::MS_SYNCHRONOUS,
+                        "unbindable" => flags |= MsFlags::MS_UNBINDABLE,
+                        _ => {}
+                    }
                 }
             }
-        }
-        flags
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct IdMappingConfig {
-    #[serde(rename = "containerID")]
-    container_id: usize,
-    #[serde(rename = "hostID")]
-    host_id: usize,
-    size: usize,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LinuxConfig {
-    namespaces: Vec<NamespaceConfig>,
-    uid_mappings: Option<Vec<IdMappingConfig>>,
-    gid_mappings: Option<Vec<IdMappingConfig>>,
-    masked_paths: Option<Vec<PathBuf>>,
-    readonly_paths: Option<Vec<PathBuf>>,
-}
-
-impl From<&LinuxConfig> for CloneFlags {
-    fn from(value: &LinuxConfig) -> Self {
-        let mut flags = CloneFlags::empty();
-        for namespace in &value.namespaces {
-            flags |= CloneFlags::from(&namespace.kind)
-        }
-        flags
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct UserConfig {
-    uid: u32,
-    gid: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct CapabilitiesConfig {
-    effective: Option<CapsHashSet>,
-    bounding: Option<CapsHashSet>,
-    inheritable: Option<CapsHashSet>,
-    permitted: Option<CapsHashSet>,
-    ambient: Option<CapsHashSet>,
-}
-
-impl CapabilitiesConfig {
-    fn get(&self, cset: CapSet) -> Option<&CapsHashSet> {
-        let capabilities = match cset {
-            CapSet::Ambient => &self.ambient,
-            CapSet::Bounding => &self.bounding,
-            CapSet::Effective => &self.effective,
-            CapSet::Inheritable => &self.inheritable,
-            CapSet::Permitted => &self.permitted,
-        };
-        capabilities.as_ref()
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-enum RlimitKind {
-    #[serde(rename = "RLIMIT_AS")]
-    As,
-    #[serde(rename = "RLIMIT_CORE")]
-    Core,
-    #[serde(rename = "RLIMIT_CPU")]
-    Cpu,
-    #[serde(rename = "RLIMIT_DATA")]
-    Data,
-    #[serde(rename = "RLIMIT_FSIZE")]
-    Fsize,
-    #[serde(rename = "RLIMIT_LOCKS")]
-    Locks,
-    #[serde(rename = "RLIMIT_MEMLOCK")]
-    Memlock,
-    #[serde(rename = "RLIMIT_MSGQUEUE")]
-    Msgqueue,
-    #[serde(rename = "RLIMIT_NICE")]
-    Nice,
-    #[serde(rename = "RLIMIT_NOFILE")]
-    Nofile,
-    #[serde(rename = "RLIMIT_NPROC")]
-    Nproc,
-    #[serde(rename = "RLIMIT_RSS")]
-    Rss,
-    #[serde(rename = "RLIMIT_RTPRIO")]
-    Rtprio,
-    #[serde(rename = "RLIMIT_RTTIME")]
-    Rttime,
-    #[serde(rename = "RLIMIT_SIGPENDING")]
-    Sigpending,
-    #[serde(rename = "RLIMIT_STACK")]
-    Stack,
-}
-
-impl From<&RlimitKind> for Resource {
-    fn from(value: &RlimitKind) -> Self {
-        match value {
-            RlimitKind::As => Resource::RLIMIT_AS,
-            RlimitKind::Core => Resource::RLIMIT_CORE,
-            RlimitKind::Cpu => Resource::RLIMIT_CPU,
-            RlimitKind::Data => Resource::RLIMIT_DATA,
-            RlimitKind::Fsize => Resource::RLIMIT_FSIZE,
-            RlimitKind::Locks => Resource::RLIMIT_LOCKS,
-            RlimitKind::Memlock => Resource::RLIMIT_MEMLOCK,
-            RlimitKind::Msgqueue => Resource::RLIMIT_MSGQUEUE,
-            RlimitKind::Nice => Resource::RLIMIT_NICE,
-            RlimitKind::Nofile => Resource::RLIMIT_NOFILE,
-            RlimitKind::Nproc => Resource::RLIMIT_NPROC,
-            RlimitKind::Rss => Resource::RLIMIT_RSS,
-            RlimitKind::Rtprio => Resource::RLIMIT_RTPRIO,
-            RlimitKind::Rttime => Resource::RLIMIT_RTTIME,
-            RlimitKind::Sigpending => Resource::RLIMIT_SIGPENDING,
-            RlimitKind::Stack => Resource::RLIMIT_STACK,
+            flags
         }
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct RlimitConfig {
-    #[serde(rename = "type")]
-    kind: RlimitKind,
-    soft: u64,
-    hard: u64,
-}
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ProcessConfig {
+        pub cwd: PathBuf,
+        pub env: Option<Vec<String>>,
+        pub args: Vec<String>,
+        pub user: UserConfig,
+        pub capabilities: Option<CapabilitiesConfig>,
+        pub no_new_privileges: Option<bool>,
+        pub rlimits: Option<Vec<RlimitConfig>>,
+    }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProcessConfig {
-    cwd: PathBuf,
-    env: Option<Vec<String>>,
-    args: Vec<String>,
-    user: UserConfig,
-    capabilities: Option<CapabilitiesConfig>,
-    no_new_privileges: Option<bool>,
-    rlimits: Option<Vec<RlimitConfig>>,
-}
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct LinuxConfig {
+        pub namespaces: Vec<NamespaceConfig>,
+        pub uid_mappings: Option<Vec<IdMappingConfig>>,
+        pub gid_mappings: Option<Vec<IdMappingConfig>>,
+        pub masked_paths: Option<Vec<PathBuf>>,
+        pub readonly_paths: Option<Vec<PathBuf>>,
+    }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Config {
-    oci_version: String,
-    hostname: Option<String>,
-    root: RootConfig,
-    mounts: Option<Vec<MountConfig>>,
-    process: Option<ProcessConfig>,
-    linux: LinuxConfig,
+    impl From<&LinuxConfig> for CloneFlags {
+        fn from(value: &LinuxConfig) -> Self {
+            let mut flags = CloneFlags::empty();
+            for namespace in &value.namespaces {
+                flags |= CloneFlags::from(&namespace.kind)
+            }
+            flags
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct UserConfig {
+        pub uid: u32,
+        pub gid: u32,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct CapabilitiesConfig {
+        pub effective: Option<CapsHashSet>,
+        pub bounding: Option<CapsHashSet>,
+        pub inheritable: Option<CapsHashSet>,
+        pub permitted: Option<CapsHashSet>,
+        pub ambient: Option<CapsHashSet>,
+    }
+
+    impl CapabilitiesConfig {
+        pub fn get(&self, cset: CapSet) -> Option<&CapsHashSet> {
+            let capabilities = match cset {
+                CapSet::Ambient => &self.ambient,
+                CapSet::Bounding => &self.bounding,
+                CapSet::Effective => &self.effective,
+                CapSet::Inheritable => &self.inheritable,
+                CapSet::Permitted => &self.permitted,
+            };
+            capabilities.as_ref()
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct RlimitConfig {
+        #[serde(rename = "type")]
+        pub kind: RlimitKind,
+        pub soft: u64,
+        pub hard: u64,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct NamespaceConfig {
+        #[serde(rename = "type")]
+        kind: NamespaceKind,
+    }
+
+    #[derive(Debug, Deserialize)]
+    pub struct IdMappingConfig {
+        #[serde(rename = "containerID")]
+        pub container_id: usize,
+        #[serde(rename = "hostID")]
+        pub host_id: usize,
+        pub size: usize,
+    }
+
+    #[derive(Debug, Deserialize, Clone)]
+    pub enum RlimitKind {
+        #[serde(rename = "RLIMIT_AS")]
+        As,
+        #[serde(rename = "RLIMIT_CORE")]
+        Core,
+        #[serde(rename = "RLIMIT_CPU")]
+        Cpu,
+        #[serde(rename = "RLIMIT_DATA")]
+        Data,
+        #[serde(rename = "RLIMIT_FSIZE")]
+        Fsize,
+        #[serde(rename = "RLIMIT_LOCKS")]
+        Locks,
+        #[serde(rename = "RLIMIT_MEMLOCK")]
+        Memlock,
+        #[serde(rename = "RLIMIT_MSGQUEUE")]
+        Msgqueue,
+        #[serde(rename = "RLIMIT_NICE")]
+        Nice,
+        #[serde(rename = "RLIMIT_NOFILE")]
+        Nofile,
+        #[serde(rename = "RLIMIT_NPROC")]
+        Nproc,
+        #[serde(rename = "RLIMIT_RSS")]
+        Rss,
+        #[serde(rename = "RLIMIT_RTPRIO")]
+        Rtprio,
+        #[serde(rename = "RLIMIT_RTTIME")]
+        Rttime,
+        #[serde(rename = "RLIMIT_SIGPENDING")]
+        Sigpending,
+        #[serde(rename = "RLIMIT_STACK")]
+        Stack,
+    }
+
+    impl From<&RlimitKind> for Resource {
+        fn from(value: &RlimitKind) -> Self {
+            match value {
+                RlimitKind::As => Resource::RLIMIT_AS,
+                RlimitKind::Core => Resource::RLIMIT_CORE,
+                RlimitKind::Cpu => Resource::RLIMIT_CPU,
+                RlimitKind::Data => Resource::RLIMIT_DATA,
+                RlimitKind::Fsize => Resource::RLIMIT_FSIZE,
+                RlimitKind::Locks => Resource::RLIMIT_LOCKS,
+                RlimitKind::Memlock => Resource::RLIMIT_MEMLOCK,
+                RlimitKind::Msgqueue => Resource::RLIMIT_MSGQUEUE,
+                RlimitKind::Nice => Resource::RLIMIT_NICE,
+                RlimitKind::Nofile => Resource::RLIMIT_NOFILE,
+                RlimitKind::Nproc => Resource::RLIMIT_NPROC,
+                RlimitKind::Rss => Resource::RLIMIT_RSS,
+                RlimitKind::Rtprio => Resource::RLIMIT_RTPRIO,
+                RlimitKind::Rttime => Resource::RLIMIT_RTTIME,
+                RlimitKind::Sigpending => Resource::RLIMIT_SIGPENDING,
+                RlimitKind::Stack => Resource::RLIMIT_STACK,
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    enum NamespaceKind {
+        Pid,
+        Network,
+        Ipc,
+        Uts,
+        Mount,
+        Cgroup,
+        User,
+    }
+
+    impl From<&NamespaceKind> for CloneFlags {
+        fn from(value: &NamespaceKind) -> Self {
+            match value {
+                NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
+                NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
+                NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
+                NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
+                NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
+                NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
+                NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
+            }
+        }
+    }
 }
 
 fn main() {
@@ -582,7 +588,8 @@ fn main() {
     );
     let config_path = bundle_path.join("config.json");
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
-    let mut config: Config = serde_json::from_str(&config_string).expect("failed to parse config");
+    let mut config: raw_config::Config =
+        serde_json::from_str(&config_string).expect("failed to parse config");
     config.root.path = bundle_path.join(config.root.path);
 
     if let Some(mounts) = &mut config.mounts {
