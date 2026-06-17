@@ -21,7 +21,10 @@
     in
     {
       devShells.${system}.default = pkgs.mkShell {
-        buildInputs = [ fenix.packages.${system}.complete.toolchain ];
+        buildInputs = [
+          fenix.packages.${system}.complete.toolchain
+          pkgs.bacon
+        ];
       };
     };
 }

@@ -1,0 +1,18 @@
+layout {
+    tab name="oci-runtime" {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        pane split_direction="vertical" {
+            pane command="direnv" name="bacon" {
+                args "exec" "." "bacon"
+            }
+            pane command="direnv" name="nvim" focus=true {
+                args "exec" "." "nvim"
+            }
+        }
+        pane size=1 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+}
