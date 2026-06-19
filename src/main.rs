@@ -591,13 +591,17 @@ struct ValidatedConfig {
 enum ValidationError {
     InvalidVersion(String),
     UnsupportedVersion,
+    PathNotFound(PathBuf),
+    NotADirectory(PathBuf),
 }
 
 impl Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidVersion(e) => write!(f, "Failed to validate OCI version: {}", e),
-            Self::UnsupportedVersion => write!(f, "Unsupported OCI version"),
+            Self::InvalidVersion(e) => write!(f, "ociVersion is invalid: {}", e),
+            Self::UnsupportedVersion => write!(f, "ociVersion is unsupported"),
+            Self::PathNotFound(p) => write!(f, "root.path does not exist: {}", p.display()),
+            Self::NotADirectory(p) => write!(f, "root.path is not a directory: {}", p.display()),
         }
     }
 }
@@ -632,6 +636,15 @@ fn validate_version(version: String) -> Result<Version, ValidationError> {
         }
     }
     version_result
+}
+
+// TODO: validate that root path is a directory
+// TODO: wire this into validate function
+fn validate_root_path(path: PathBuf) -> Result<PathBuf, ValidationError> {
+    if !path.exists() {
+        return Err(ValidationError::PathNotFound(path));
+    }
+    return Ok(path);
 }
 
 fn main() {
@@ -679,5 +692,11 @@ mod tests {
     fn test_unsupported_version() {
         let err = validate_version(String::from("2.3.3")).unwrap_err();
         assert!(matches!(err, ValidationError::UnsupportedVersion))
+    }
+
+    #[test]
+    fn test_missing_root_path() {
+        let err = validate_root_path(PathBuf::from("/does/not/exist")).unwrap_err();
+        assert!(matches!(err, ValidationError::PathNotFound(_)))
     }
 }
