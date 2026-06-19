@@ -598,10 +598,17 @@ impl Display for ValidationError {
     }
 }
 
-fn validate(config: raw_config::Config) -> Result<ValidatedConfig, ValidationError> {
+fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<ValidationError>> {
+    let mut errors = Vec::new();
+
     if config.oci_version != "1.3.0" {
-        return Err(ValidationError::InvalidVersion);
+        errors.push(ValidationError::InvalidVersion);
     }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
     Ok(ValidatedConfig {
         oci_version: config.oci_version,
     })
@@ -625,7 +632,14 @@ fn main() {
         }
     }
 
-    validate(config.clone()).unwrap_or_else(|e| panic!("failed to validate config: {}", e));
+    match validate(config.clone()) {
+        Ok(_) => {}
+        Err(errors) => {
+            for error in errors {
+                eprintln!("{}", error)
+            }
+        }
+    }
 
     start_container(config);
 }
@@ -655,6 +669,6 @@ mod tests {
         };
 
         let err = validate(config).unwrap_err();
-        assert!(matches!(err, ValidationError::InvalidVersion))
+        assert!(matches!(err[0], ValidationError::InvalidVersion))
     }
 }
