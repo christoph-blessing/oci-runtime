@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString};
+use std::fmt::Display;
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::PathBuf;
@@ -332,10 +333,10 @@ mod raw_config {
     use serde::Deserialize;
     use std::path::PathBuf;
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Config {
-        oci_version: String,
+        pub oci_version: String,
         pub hostname: Option<String>,
         pub root: RootConfig,
         pub mounts: Option<Vec<MountConfig>>,
@@ -343,13 +344,13 @@ mod raw_config {
         pub linux: LinuxConfig,
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct RootConfig {
         pub path: PathBuf,
         pub readonly: Option<bool>,
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct MountConfig {
         pub destination: PathBuf,
         #[serde(rename = "type")]
@@ -411,7 +412,7 @@ mod raw_config {
         }
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct ProcessConfig {
         pub cwd: PathBuf,
@@ -423,7 +424,7 @@ mod raw_config {
         pub rlimits: Option<Vec<RlimitConfig>>,
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct LinuxConfig {
         pub namespaces: Vec<NamespaceConfig>,
@@ -443,13 +444,13 @@ mod raw_config {
         }
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct UserConfig {
         pub uid: u32,
         pub gid: u32,
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct CapabilitiesConfig {
         pub effective: Option<CapsHashSet>,
         pub bounding: Option<CapsHashSet>,
@@ -471,7 +472,7 @@ mod raw_config {
         }
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct RlimitConfig {
         #[serde(rename = "type")]
         pub kind: RlimitKind,
@@ -479,13 +480,13 @@ mod raw_config {
         pub hard: u64,
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct NamespaceConfig {
         #[serde(rename = "type")]
         kind: NamespaceKind,
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     pub struct IdMappingConfig {
         #[serde(rename = "containerID")]
         pub container_id: usize,
@@ -494,7 +495,7 @@ mod raw_config {
         pub size: usize,
     }
 
-    #[derive(Debug, Deserialize, Clone)]
+    #[derive(Clone, Debug, Deserialize)]
     pub enum RlimitKind {
         #[serde(rename = "RLIMIT_AS")]
         As,
@@ -553,7 +554,7 @@ mod raw_config {
         }
     }
 
-    #[derive(Debug, Deserialize)]
+    #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "lowercase")]
     enum NamespaceKind {
         Pid,
@@ -580,6 +581,31 @@ mod raw_config {
     }
 }
 
+struct ValidatedConfig {
+    oci_version: String,
+}
+
+enum ValidationError {
+    InvalidVersion,
+}
+
+impl Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidVersion => write!(f, "Invalid OCI version"),
+        }
+    }
+}
+
+fn validate(config: raw_config::Config) -> Result<ValidatedConfig, ValidationError> {
+    if config.oci_version != "1.3.0" {
+        return Err(ValidationError::InvalidVersion);
+    }
+    Ok(ValidatedConfig {
+        oci_version: config.oci_version,
+    })
+}
+
 fn main() {
     let bundle_path = PathBuf::from(
         std::env::args()
@@ -597,6 +623,8 @@ fn main() {
             mount.destination = PathBuf::from("/").join(mount.destination.clone());
         }
     }
+
+    validate(config.clone()).unwrap_or_else(|e| panic!("failed to validate config: {}", e));
 
     start_container(config);
 }
