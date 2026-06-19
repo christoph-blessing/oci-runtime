@@ -689,4 +689,28 @@ mod tests {
         let err = validate(config).unwrap_err();
         assert!(matches!(err[0], ValidationError::InvalidVersion(_)))
     }
+
+    #[test]
+    fn test_unsupported_version() {
+        let config = raw_config::Config {
+            oci_version: String::from("2.3.3"),
+            hostname: Some(String::from("test")),
+            root: raw_config::RootConfig {
+                path: PathBuf::from("/path/to/rootfs"),
+                readonly: None,
+            },
+            mounts: None,
+            process: None,
+            linux: raw_config::LinuxConfig {
+                namespaces: vec![],
+                uid_mappings: None,
+                gid_mappings: None,
+                masked_paths: None,
+                readonly_paths: None,
+            },
+        };
+
+        let err = validate(config).unwrap_err();
+        assert!(matches!(err[0], ValidationError::UnsupportedVersion))
+    }
 }
