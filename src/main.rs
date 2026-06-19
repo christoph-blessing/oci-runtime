@@ -581,6 +581,7 @@ mod raw_config {
     }
 }
 
+#[derive(Debug)]
 struct ValidatedConfig {
     oci_version: String,
 }
@@ -627,4 +628,33 @@ fn main() {
     validate(config.clone()).unwrap_or_else(|e| panic!("failed to validate config: {}", e));
 
     start_container(config);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_invalid_version() {
+        let config = raw_config::Config {
+            oci_version: String::from("1.3.3"),
+            hostname: Some(String::from("test")),
+            root: raw_config::RootConfig {
+                path: PathBuf::from("/path/to/rootfs"),
+                readonly: None,
+            },
+            mounts: None,
+            process: None,
+            linux: raw_config::LinuxConfig {
+                namespaces: vec![],
+                uid_mappings: None,
+                gid_mappings: None,
+                masked_paths: None,
+                readonly_paths: None,
+            },
+        };
+
+        let err = validate(config).unwrap_err();
+        assert!(matches!(err, ValidationError::InvalidVersion))
+    }
 }
