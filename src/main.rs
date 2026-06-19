@@ -669,7 +669,7 @@ mod tests {
     #[test]
     fn test_invalid_version() {
         let config = raw_config::Config {
-            oci_version: String::from("1.3.3"),
+            oci_version: String::from("1.3.3.1234"),
             hostname: Some(String::from("test")),
             root: raw_config::RootConfig {
                 path: PathBuf::from("/path/to/rootfs"),
@@ -687,6 +687,6 @@ mod tests {
         };
 
         let err = validate(config).unwrap_err();
-        assert!(matches!(err[0], ValidationError::UnsupportedVersion))
+        assert!(matches!(err[0], ValidationError::InvalidVersion(_)))
     }
 }
