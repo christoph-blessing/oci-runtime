@@ -16,7 +16,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     Gid, Uid, chdir, close, execve, pipe, pivot_root, read, setgid, sethostname, setuid, write,
 };
-use semver::{Prerelease, Version};
+use semver::{Prerelease, Version, VersionReq};
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -608,9 +608,9 @@ fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<Validatio
     // Validate ociVersion
     let mut version_result = Version::parse(config.oci_version.as_str())
         .map_err(|e| ValidationError::InvalidVersion(e.to_string()));
-    let runtime_version = Version::new(1, 3, 0);
     if let Ok(ref config_version) = version_result {
-        if runtime_version != *config_version {
+        let req = VersionReq::parse("^1.0").unwrap();
+        if !req.matches(config_version) {
             version_result = Err(ValidationError::UnsupportedVersion)
         }
     }
