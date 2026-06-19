@@ -589,14 +589,14 @@ struct ValidatedConfig {
 }
 
 enum ValidationError {
-    InvalidVersion,
+    InvalidVersion(String),
     UnsupportedVersion,
 }
 
 impl Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidVersion => write!(f, "Invalid OCI version"),
+            Self::InvalidVersion(e) => write!(f, "Failed to validate OCI version: {}", e),
             Self::UnsupportedVersion => write!(f, "Unsupported OCI version"),
         }
     }
@@ -606,8 +606,8 @@ fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<Validatio
     let mut errors = Vec::new();
 
     // Validate ociVersion
-    let mut version_result =
-        Version::parse(config.oci_version.as_str()).map_err(|_| ValidationError::InvalidVersion);
+    let mut version_result = Version::parse(config.oci_version.as_str())
+        .map_err(|e| ValidationError::InvalidVersion(e.to_string()));
     let runtime_version = Version::new(1, 3, 0);
     if let Ok(ref config_version) = version_result {
         if runtime_version != *config_version {
