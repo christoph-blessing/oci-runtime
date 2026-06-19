@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::PathBuf;
+use std::process::exit;
 
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
@@ -15,6 +16,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     Gid, Uid, chdir, close, execve, pipe, pivot_root, read, setgid, sethostname, setuid, write,
 };
+use semver::{Prerelease, Version};
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -583,17 +585,19 @@ mod raw_config {
 
 #[derive(Debug)]
 struct ValidatedConfig {
-    oci_version: String,
+    oci_version: Version,
 }
 
 enum ValidationError {
     InvalidVersion,
+    UnsupportedVersion,
 }
 
 impl Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidVersion => write!(f, "Invalid OCI version"),
+            Self::UnsupportedVersion => write!(f, "Unsupported OCI version"),
         }
     }
 }
@@ -601,16 +605,29 @@ impl Display for ValidationError {
 fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<ValidationError>> {
     let mut errors = Vec::new();
 
-    if config.oci_version != "1.3.0" {
-        errors.push(ValidationError::InvalidVersion);
+    // Validate ociVersion
+    let mut version_result =
+        Version::parse(config.oci_version.as_str()).map_err(|_| ValidationError::InvalidVersion);
+    let runtime_version = Version::new(1, 3, 0);
+    if let Ok(ref config_version) = version_result {
+        if runtime_version != *config_version {
+            version_result = Err(ValidationError::UnsupportedVersion)
+        }
     }
+    let version = match version_result {
+        Ok(version) => Some(version),
+        Err(error) => {
+            errors.push(error);
+            None
+        }
+    };
 
     if !errors.is_empty() {
         return Err(errors);
     }
 
     Ok(ValidatedConfig {
-        oci_version: config.oci_version,
+        oci_version: version.unwrap(),
     })
 }
 
@@ -636,7 +653,8 @@ fn main() {
         Ok(_) => {}
         Err(errors) => {
             for error in errors {
-                eprintln!("{}", error)
+                eprintln!("{}", error);
+                exit(1);
             }
         }
     }
@@ -669,6 +687,6 @@ mod tests {
         };
 
         let err = validate(config).unwrap_err();
-        assert!(matches!(err[0], ValidationError::InvalidVersion))
+        assert!(matches!(err[0], ValidationError::UnsupportedVersion))
     }
 }

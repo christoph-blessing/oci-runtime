@@ -8,3 +8,4 @@ nix = { version = "0.31.3", features = ["sched", "mount", "fs", "user", "process
 serde_json = "1.0.150"
 serde = { version = "1.0", features = ["derive"] }
 caps = { version = "0.5.6", features = ["serde", "serde_support"] }
+semver = "1.0.28"
