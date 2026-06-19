@@ -16,7 +16,7 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     Gid, Uid, chdir, close, execve, pipe, pivot_root, read, setgid, sethostname, setuid, write,
 };
-use semver::{Prerelease, Version, VersionReq};
+use semver::{Version, VersionReq};
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -605,16 +605,7 @@ impl Display for ValidationError {
 fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<ValidationError>> {
     let mut errors = Vec::new();
 
-    // Validate ociVersion
-    let mut version_result = Version::parse(config.oci_version.as_str())
-        .map_err(|e| ValidationError::InvalidVersion(e.to_string()));
-    if let Ok(ref config_version) = version_result {
-        let req = VersionReq::parse("^1.0").unwrap();
-        if !req.matches(config_version) {
-            version_result = Err(ValidationError::UnsupportedVersion)
-        }
-    }
-    let version = match version_result {
+    let version = match validate_version(config.oci_version) {
         Ok(version) => Some(version),
         Err(error) => {
             errors.push(error);
@@ -629,6 +620,18 @@ fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<Validatio
     Ok(ValidatedConfig {
         oci_version: version.unwrap(),
     })
+}
+
+fn validate_version(version: String) -> Result<Version, ValidationError> {
+    let mut version_result = Version::parse(version.as_str())
+        .map_err(|e| ValidationError::InvalidVersion(e.to_string()));
+    if let Ok(ref config_version) = version_result {
+        let req = VersionReq::parse("^1.0").unwrap();
+        if !req.matches(config_version) {
+            version_result = Err(ValidationError::UnsupportedVersion)
+        }
+    }
+    version_result
 }
 
 fn main() {
