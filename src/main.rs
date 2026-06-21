@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::fmt::Display;
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use caps::errors::CapsError;
@@ -638,15 +638,28 @@ fn validate_version(version: String) -> Result<Version, ValidationError> {
     version_result
 }
 
+#[derive(Debug)]
+struct ExistingDir(PathBuf);
+
+impl ExistingDir {
+    fn new(path: PathBuf) -> Result<Self, ValidationError> {
+        if !path.exists() {
+            return Err(ValidationError::PathNotFound(path));
+        }
+        if !path.is_dir() {
+            return Err(ValidationError::NotADirectory(path));
+        }
+        Ok(Self(path))
+    }
+
+    fn as_path(&self) -> &Path {
+        self.0.as_path()
+    }
+}
+
 // TODO: wire this into validate function
-fn validate_root_path(path: PathBuf) -> Result<PathBuf, ValidationError> {
-    if !path.exists() {
-        return Err(ValidationError::PathNotFound(path));
-    }
-    if !path.is_dir() {
-        return Err(ValidationError::NotADirectory(path));
-    }
-    return Ok(path);
+fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
+    ExistingDir::new(path)
 }
 
 fn main() {
