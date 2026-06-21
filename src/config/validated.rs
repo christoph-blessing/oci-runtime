@@ -5,6 +5,7 @@ use semver::Version;
 #[derive(Debug)]
 pub struct Config {
     pub oci_version: Version,
+    pub hostname: Option<String>,
     pub root: RootConfig,
 }
 

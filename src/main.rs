@@ -117,7 +117,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
-        if let Some(hostname) = &raw_config.hostname {
+        if let Some(hostname) = &validated_config.hostname {
             sethostname(hostname).expect("failed to set hostname");
         }
 
