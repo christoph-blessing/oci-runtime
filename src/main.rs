@@ -638,11 +638,13 @@ fn validate_version(version: String) -> Result<Version, ValidationError> {
     version_result
 }
 
-// TODO: validate that root path is a directory
 // TODO: wire this into validate function
 fn validate_root_path(path: PathBuf) -> Result<PathBuf, ValidationError> {
     if !path.exists() {
         return Err(ValidationError::PathNotFound(path));
+    }
+    if !path.is_dir() {
+        return Err(ValidationError::NotADirectory(path));
     }
     return Ok(path);
 }
@@ -680,6 +682,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::NamedTempFile;
+
     use super::*;
 
     #[test]
@@ -698,5 +702,12 @@ mod tests {
     fn test_missing_root_path() {
         let err = validate_root_path(PathBuf::from("/does/not/exist")).unwrap_err();
         assert!(matches!(err, ValidationError::PathNotFound(_)))
+    }
+
+    #[test]
+    fn test_root_path_not_a_directory() {
+        let file = NamedTempFile::new().unwrap();
+        let err = validate_root_path(file.path().to_owned()).unwrap_err();
+        assert!(matches!(err, ValidationError::NotADirectory(_)));
     }
 }

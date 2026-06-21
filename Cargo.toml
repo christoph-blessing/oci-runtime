@@ -9,3 +9,4 @@ serde_json = "1.0.150"
 serde = { version = "1.0", features = ["derive"] }
 caps = { version = "0.5.6", features = ["serde", "serde_support"] }
 semver = "1.0.28"
+tempfile = "3.27.0"
