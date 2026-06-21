@@ -1,5 +1,6 @@
 use super::validation::AbsolutePath;
 use super::validation::ExistingDir;
+use nix::mount::MsFlags;
 use semver::Version;
 
 #[derive(Debug)]
@@ -21,5 +22,5 @@ pub struct MountConfig {
     pub destination: AbsolutePath,
     pub kind: Option<String>,
     pub source: Option<String>,
-    pub options: Option<Vec<String>>,
+    pub flags: MsFlags,
 }

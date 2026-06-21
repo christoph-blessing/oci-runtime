@@ -57,42 +57,40 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         )
         .expect("failed to bind mount new_root");
 
-        if let Some(mounts) = &raw_config.mounts {
-            for mount_config in mounts {
-                let destination =
-                    root_path.join(&mount_config.destination.strip_prefix("/").unwrap_or_else(
-                        |e| {
-                            panic!(
-                                "failed to strip prefix from {}: {}",
-                                mount_config.destination.display(),
-                                e
-                            )
-                        },
-                    ));
-                fs::create_dir_all(&destination).unwrap_or_else(|e| {
-                    panic!("failed to create: {}: {}", destination.display(), e)
-                });
-                if mount_config.kind.as_deref() == Some("cgroup") {
-                    mount(
-                        Some(&mount_config.destination),
-                        &destination,
-                        None::<&str>,
-                        MsFlags::MS_BIND | mount_config.flags(),
-                        None::<&str>,
-                    )
-                    .expect("failed to mount cgroup");
-                } else {
-                    mount(
-                        mount_config.source.as_deref(),
-                        &destination,
-                        mount_config.kind.as_deref(),
-                        mount_config.flags(),
-                        None::<&str>,
-                    )
+        for mount_config in &validated_config.mounts {
+            let destination = root_path.join(
+                &mount_config
+                    .destination
+                    .as_path()
+                    .strip_prefix("/")
                     .unwrap_or_else(|e| {
-                        panic!("failed to mount: {}: {}", destination.display(), e)
-                    });
-                }
+                        panic!(
+                            "failed to strip prefix from {}: {}",
+                            mount_config.destination.as_path().display(),
+                            e
+                        )
+                    }),
+            );
+            fs::create_dir_all(&destination)
+                .unwrap_or_else(|e| panic!("failed to create: {}: {}", destination.display(), e));
+            if mount_config.kind.as_deref() == Some("cgroup") {
+                mount(
+                    Some(mount_config.destination.as_path()),
+                    &destination,
+                    None::<&str>,
+                    MsFlags::MS_BIND | mount_config.flags,
+                    None::<&str>,
+                )
+                .expect("failed to mount cgroup");
+            } else {
+                mount(
+                    mount_config.source.as_deref(),
+                    &destination,
+                    mount_config.kind.as_deref(),
+                    mount_config.flags,
+                    None::<&str>,
+                )
+                .unwrap_or_else(|e| panic!("failed to mount: {}: {}", destination.display(), e));
             }
         }
 
