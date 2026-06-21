@@ -18,6 +18,8 @@ use nix::unistd::{
 };
 use semver::{Version, VersionReq};
 
+use crate::raw_config::RootConfig;
+
 const STACK_SIZE: usize = 1024 * 1024;
 
 fn start_container(config: raw_config::Config) {
@@ -586,6 +588,12 @@ mod raw_config {
 #[derive(Debug)]
 struct ValidatedConfig {
     oci_version: Version,
+    root: ValidatedRootConfig,
+}
+
+#[derive(Debug)]
+struct ValidatedRootConfig {
+    path: ExistingDir,
 }
 
 enum ValidationError {
@@ -617,12 +625,23 @@ fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<Validatio
         }
     };
 
+    let root_path = match validate_root_path(config.root.path) {
+        Ok(root_path) => Some(root_path),
+        Err(error) => {
+            errors.push(error);
+            None
+        }
+    };
+
     if !errors.is_empty() {
         return Err(errors);
     }
 
     Ok(ValidatedConfig {
         oci_version: version.unwrap(),
+        root: ValidatedRootConfig {
+            path: root_path.unwrap(),
+        },
     })
 }
 
@@ -657,7 +676,6 @@ impl ExistingDir {
     }
 }
 
-// TODO: wire this into validate function
 fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
     ExistingDir::new(path)
 }
