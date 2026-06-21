@@ -11,6 +11,7 @@ pub struct Config {
 #[derive(Debug)]
 pub struct RootConfig {
     pub path: ExistingDir,
+    pub readonly: bool,
 }
 
 pub struct MountConfig {

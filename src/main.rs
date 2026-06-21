@@ -121,7 +121,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
             sethostname(hostname).expect("failed to set hostname");
         }
 
-        if raw_config.root.readonly == Some(true) {
+        if validated_config.root.readonly {
             mount(
                 None::<&str>,
                 "/",

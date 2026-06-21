@@ -57,6 +57,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         oci_version: version.unwrap(),
         root: ValidatedRootConfig {
             path: root_path.unwrap(),
+            readonly: raw_config.root.readonly.unwrap_or(false),
         },
     })
 }
