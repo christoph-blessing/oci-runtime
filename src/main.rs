@@ -18,8 +18,6 @@ use nix::unistd::{
 };
 use semver::{Version, VersionReq};
 
-use crate::raw_config::RootConfig;
-
 const STACK_SIZE: usize = 1024 * 1024;
 
 fn start_container(config: raw_config::Config) {
@@ -680,6 +678,17 @@ fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
     ExistingDir::new(path)
 }
 
+// Mount validation
+struct ValidatedMountConfig {
+    destination: PathBuf,
+}
+
+fn validate_mount(config: raw_config::MountConfig) -> ValidatedMountConfig {
+    ValidatedMountConfig {
+        destination: PathBuf::from("/").join(config.destination),
+    }
+}
+
 fn main() {
     let bundle_path = PathBuf::from(
         std::env::args()
@@ -740,5 +749,16 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         let err = validate_root_path(file.path().to_owned()).unwrap_err();
         assert!(matches!(err, ValidationError::NotADirectory(_)));
+    }
+
+    #[test]
+    fn test_mount_destination_absolute() {
+        let config = raw_config::MountConfig {
+            destination: PathBuf::from("not/absolute"),
+            kind: None,
+            source: None,
+            options: None,
+        };
+        assert!(validate_mount(config).destination.is_absolute())
     }
 }
