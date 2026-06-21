@@ -1,12 +1,13 @@
 use std::ffi::{CStr, CString};
-use std::fmt::Display;
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
+use config::raw::{Config, IdMappingConfig};
+use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::prctl::set_no_new_privs;
@@ -16,13 +17,12 @@ use nix::sys::wait::waitpid;
 use nix::unistd::{
     Gid, Uid, chdir, close, execve, pipe, pivot_root, read, setgid, sethostname, setuid, write,
 };
-use semver::{Version, VersionReq};
 
 mod config;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container(config: config::raw::Config) {
+fn start_container(config: Config) {
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -324,116 +324,11 @@ fn set_capabilities(cset: CapSet, new_caps: Option<&CapsHashSet>) -> Result<(), 
     }
 }
 
-fn create_id_map_contents(mappings: &[config::raw::IdMappingConfig]) -> String {
+fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
     mappings
         .iter()
         .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
         .collect()
-}
-
-enum ValidationError {
-    InvalidVersion(String),
-    UnsupportedVersion,
-    PathNotFound(PathBuf),
-    NotADirectory(PathBuf),
-}
-
-impl Display for ValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidVersion(e) => write!(f, "ociVersion is invalid: {}", e),
-            Self::UnsupportedVersion => write!(f, "ociVersion is unsupported"),
-            Self::PathNotFound(p) => write!(f, "root.path does not exist: {}", p.display()),
-            Self::NotADirectory(p) => write!(f, "root.path is not a directory: {}", p.display()),
-        }
-    }
-}
-
-fn validate(
-    config: config::raw::Config,
-) -> Result<config::validated::Config, Vec<ValidationError>> {
-    let mut errors = Vec::new();
-
-    let version = match validate_version(config.oci_version) {
-        Ok(version) => Some(version),
-        Err(error) => {
-            errors.push(error);
-            None
-        }
-    };
-
-    let root_path = match validate_root_path(config.root.path) {
-        Ok(root_path) => Some(root_path),
-        Err(error) => {
-            errors.push(error);
-            None
-        }
-    };
-
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    Ok(config::validated::Config {
-        oci_version: version.unwrap(),
-        root: config::validated::RootConfig {
-            path: root_path.unwrap(),
-        },
-    })
-}
-
-fn validate_version(version: String) -> Result<Version, ValidationError> {
-    let mut version_result = Version::parse(version.as_str())
-        .map_err(|e| ValidationError::InvalidVersion(e.to_string()));
-    if let Ok(ref config_version) = version_result {
-        let req = VersionReq::parse("^1.0").unwrap();
-        if !req.matches(config_version) {
-            version_result = Err(ValidationError::UnsupportedVersion)
-        }
-    }
-    version_result
-}
-
-#[derive(Debug)]
-struct ExistingDir(PathBuf);
-
-impl ExistingDir {
-    fn new(path: PathBuf) -> Result<Self, ValidationError> {
-        if !path.exists() {
-            return Err(ValidationError::PathNotFound(path));
-        }
-        if !path.is_dir() {
-            return Err(ValidationError::NotADirectory(path));
-        }
-        Ok(Self(path))
-    }
-
-    fn as_path(&self) -> &Path {
-        self.0.as_path()
-    }
-}
-
-fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
-    ExistingDir::new(path)
-}
-
-// Mount validation
-struct AbsolutePath(PathBuf);
-
-impl AbsolutePath {
-    fn new(path: PathBuf) -> Self {
-        Self(PathBuf::from("/").join(path))
-    }
-
-    fn as_path(&self) -> &Path {
-        self.0.as_path()
-    }
-}
-
-fn validate_mount(config: config::raw::MountConfig) -> config::validated::MountConfig {
-    config::validated::MountConfig {
-        destination: AbsolutePath::new(config.destination),
-    }
 }
 
 fn main() {
@@ -444,8 +339,7 @@ fn main() {
     );
     let config_path = bundle_path.join("config.json");
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
-    let mut config: config::raw::Config =
-        serde_json::from_str(&config_string).expect("failed to parse config");
+    let mut config: Config = serde_json::from_str(&config_string).expect("failed to parse config");
     config.root.path = bundle_path.join(config.root.path);
 
     if let Some(mounts) = &mut config.mounts {
@@ -454,7 +348,7 @@ fn main() {
         }
     }
 
-    match validate(config.clone()) {
+    match validation::validate(config.clone()) {
         Ok(_) => {}
         Err(errors) => {
             for error in errors {
@@ -465,47 +359,4 @@ fn main() {
     }
 
     start_container(config);
-}
-
-#[cfg(test)]
-mod tests {
-    use tempfile::NamedTempFile;
-
-    use super::*;
-
-    #[test]
-    fn test_invalid_version() {
-        let err = validate_version(String::from("1.2.3.4")).unwrap_err();
-        assert!(matches!(err, ValidationError::InvalidVersion(_)))
-    }
-
-    #[test]
-    fn test_unsupported_version() {
-        let err = validate_version(String::from("2.3.3")).unwrap_err();
-        assert!(matches!(err, ValidationError::UnsupportedVersion))
-    }
-
-    #[test]
-    fn test_missing_root_path() {
-        let err = validate_root_path(PathBuf::from("/does/not/exist")).unwrap_err();
-        assert!(matches!(err, ValidationError::PathNotFound(_)))
-    }
-
-    #[test]
-    fn test_root_path_not_a_directory() {
-        let file = NamedTempFile::new().unwrap();
-        let err = validate_root_path(file.path().to_owned()).unwrap_err();
-        assert!(matches!(err, ValidationError::NotADirectory(_)));
-    }
-
-    #[test]
-    fn test_mount_destination_absolute() {
-        let config = config::raw::MountConfig {
-            destination: PathBuf::from("not/absolute"),
-            kind: None,
-            source: None,
-            options: None,
-        };
-        assert!(validate_mount(config).destination.as_path().is_absolute())
-    }
 }

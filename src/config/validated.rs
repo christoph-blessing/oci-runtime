@@ -1,5 +1,5 @@
-use crate::AbsolutePath;
-use crate::ExistingDir;
+use super::validation::AbsolutePath;
+use super::validation::ExistingDir;
 use semver::Version;
 
 #[derive(Debug)]
