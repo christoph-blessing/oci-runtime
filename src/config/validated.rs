@@ -1,5 +1,6 @@
 use super::validation::AbsolutePath;
 use super::validation::ExistingDir;
+use caps::CapsHashSet;
 use nix::mount::MsFlags;
 use semver::Version;
 
@@ -9,6 +10,7 @@ pub struct Config {
     pub hostname: Option<String>,
     pub root: RootConfig,
     pub mounts: Vec<MountConfig>,
+    pub process: Option<ProcessConfig>,
 }
 
 #[derive(Debug)]
@@ -23,4 +25,28 @@ pub struct MountConfig {
     pub kind: Option<String>,
     pub source: Option<String>,
     pub flags: MsFlags,
+}
+
+#[derive(Debug)]
+pub struct ProcessConfig {
+    pub cwd: AbsolutePath,
+    pub env: Vec<String>,
+    pub args: Vec<String>,
+    pub user: UserConfig,
+    pub capabilities: Option<CapabilitiesConfig>,
+}
+
+#[derive(Debug)]
+pub struct UserConfig {
+    pub uid: u32,
+    pub gid: u32,
+}
+
+#[derive(Debug)]
+pub struct CapabilitiesConfig {
+    pub effective: Option<CapsHashSet>,
+    pub bounding: Option<CapsHashSet>,
+    pub inheritable: Option<CapsHashSet>,
+    pub permitted: Option<CapsHashSet>,
+    pub ambient: Option<CapsHashSet>,
 }

@@ -7,17 +7,22 @@ use semver::Version;
 use semver::VersionReq;
 
 use crate::config::raw::MountConfig;
+use crate::config::raw::ProcessConfig;
 
 use super::raw::Config as RawConfig;
+use super::validated::CapabilitiesConfig as ValidatedCapabilitiesConfig;
 use super::validated::Config as ValidatedConfig;
 use super::validated::MountConfig as ValidatedMountConfig;
+use super::validated::ProcessConfig as ValidatedProcessConfig;
 use super::validated::RootConfig as ValidatedRootConfig;
+use super::validated::UserConfig as ValidatedUserConfig;
 
 pub enum ValidationError {
     InvalidVersion(String),
     UnsupportedVersion,
     PathNotFound(PathBuf),
     NotADirectory(PathBuf),
+    EmptyArgs,
 }
 
 impl Display for ValidationError {
@@ -27,6 +32,7 @@ impl Display for ValidationError {
             Self::UnsupportedVersion => write!(f, "ociVersion is unsupported"),
             Self::PathNotFound(p) => write!(f, "root.path does not exist: {}", p.display()),
             Self::NotADirectory(p) => write!(f, "root.path is not a directory: {}", p.display()),
+            Self::EmptyArgs => write!(f, "process.args must contain at least one argument"),
         }
     }
 }
@@ -50,11 +56,22 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         }
     };
 
-    let mut validated_mounts = Vec::new();
+    let mut mounts = Vec::new();
     if let Some(raw_mounts) = raw_config.mounts {
         for raw_mount in raw_mounts {
-            validated_mounts.push(validate_mount(raw_mount));
+            mounts.push(validate_mount(raw_mount));
         }
+    }
+
+    let mut process = None;
+    if let Some(raw_process) = raw_config.process {
+        process = match validate_process(raw_process) {
+            Ok(process) => Some(process),
+            Err(error) => {
+                errors.push(error);
+                None
+            }
+        };
     }
 
     if !errors.is_empty() {
@@ -68,7 +85,8 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
             path: root_path.unwrap(),
             readonly: raw_config.root.readonly.unwrap_or(false),
         },
-        mounts: validated_mounts,
+        mounts,
+        process,
     })
 }
 
@@ -174,9 +192,40 @@ fn validate_mount(config: MountConfig) -> ValidatedMountConfig {
         flags,
     }
 }
+
+fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, ValidationError> {
+    if config.args.is_empty() {
+        return Err(ValidationError::EmptyArgs);
+    }
+    let user = ValidatedUserConfig {
+        uid: config.user.uid,
+        gid: config.user.gid,
+    };
+    let mut capabilities = None;
+    if let Some(raw_capabilites) = config.capabilities {
+        capabilities = Some(ValidatedCapabilitiesConfig {
+            effective: raw_capabilites.effective,
+            bounding: raw_capabilites.bounding,
+            inheritable: raw_capabilites.inheritable,
+            permitted: raw_capabilites.permitted,
+            ambient: raw_capabilites.ambient,
+        })
+    }
+
+    Ok(ValidatedProcessConfig {
+        cwd: AbsolutePath::new(config.cwd),
+        env: config.env.unwrap_or_default(),
+        args: config.args,
+        user,
+        capabilities,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::NamedTempFile;
+
+    use crate::config::raw::UserConfig;
 
     use super::*;
 
@@ -214,5 +263,20 @@ mod tests {
             options: None,
         };
         assert!(validate_mount(config).destination.as_path().is_absolute())
+    }
+
+    #[test]
+    fn test_empty_process_args() {
+        let config = ProcessConfig {
+            cwd: PathBuf::from("/some/path"),
+            env: None,
+            args: Vec::new(),
+            user: UserConfig { uid: 0, gid: 0 },
+            capabilities: None,
+            no_new_privileges: None,
+            rlimits: None,
+        };
+        let err = validate_process(config).unwrap_err();
+        assert!(matches!(err, ValidationError::EmptyArgs));
     }
 }
