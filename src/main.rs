@@ -18,11 +18,11 @@ use nix::unistd::{
 };
 use semver::{Version, VersionReq};
 
-mod raw_config;
+mod config;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container(config: raw_config::Config) {
+fn start_container(config: config::raw::Config) {
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -324,22 +324,11 @@ fn set_capabilities(cset: CapSet, new_caps: Option<&CapsHashSet>) -> Result<(), 
     }
 }
 
-fn create_id_map_contents(mappings: &[raw_config::IdMappingConfig]) -> String {
+fn create_id_map_contents(mappings: &[config::raw::IdMappingConfig]) -> String {
     mappings
         .iter()
         .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
         .collect()
-}
-
-#[derive(Debug)]
-struct ValidatedConfig {
-    oci_version: Version,
-    root: ValidatedRootConfig,
-}
-
-#[derive(Debug)]
-struct ValidatedRootConfig {
-    path: ExistingDir,
 }
 
 enum ValidationError {
@@ -360,7 +349,9 @@ impl Display for ValidationError {
     }
 }
 
-fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<ValidationError>> {
+fn validate(
+    config: config::raw::Config,
+) -> Result<config::validated::Config, Vec<ValidationError>> {
     let mut errors = Vec::new();
 
     let version = match validate_version(config.oci_version) {
@@ -383,9 +374,9 @@ fn validate(config: raw_config::Config) -> Result<ValidatedConfig, Vec<Validatio
         return Err(errors);
     }
 
-    Ok(ValidatedConfig {
+    Ok(config::validated::Config {
         oci_version: version.unwrap(),
-        root: ValidatedRootConfig {
+        root: config::validated::RootConfig {
             path: root_path.unwrap(),
         },
     })
@@ -427,10 +418,6 @@ fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
 }
 
 // Mount validation
-struct ValidatedMountConfig {
-    destination: AbsolutePath,
-}
-
 struct AbsolutePath(PathBuf);
 
 impl AbsolutePath {
@@ -443,8 +430,8 @@ impl AbsolutePath {
     }
 }
 
-fn validate_mount(config: raw_config::MountConfig) -> ValidatedMountConfig {
-    ValidatedMountConfig {
+fn validate_mount(config: config::raw::MountConfig) -> config::validated::MountConfig {
+    config::validated::MountConfig {
         destination: AbsolutePath::new(config.destination),
     }
 }
@@ -457,7 +444,7 @@ fn main() {
     );
     let config_path = bundle_path.join("config.json");
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
-    let mut config: raw_config::Config =
+    let mut config: config::raw::Config =
         serde_json::from_str(&config_string).expect("failed to parse config");
     config.root.path = bundle_path.join(config.root.path);
 
@@ -513,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_mount_destination_absolute() {
-        let config = raw_config::MountConfig {
+        let config = config::raw::MountConfig {
             destination: PathBuf::from("not/absolute"),
             kind: None,
             source: None,
