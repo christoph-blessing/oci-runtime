@@ -7,6 +7,7 @@ use std::process::exit;
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
 use config::raw::{Config, IdMappingConfig};
+use config::validated::Config as ValidatedConfig;
 use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
@@ -22,7 +23,7 @@ mod config;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container(config: Config) {
+fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -44,31 +45,30 @@ fn start_container(config: Config) {
         )
         .expect("failed to make mounts private");
 
-        let old_root = config.root.path.join("old_root");
+        let root_path = validated_config.root.path.as_path();
+        let old_root = root_path.join("old_root");
         let old_root_after_pivot = "/old_root";
         mount(
-            Some(&config.root.path),
-            &config.root.path,
+            Some(root_path),
+            root_path,
             None::<&str>,
             MsFlags::MS_BIND,
             None::<&str>,
         )
         .expect("failed to bind mount new_root");
 
-        if let Some(mounts) = &config.mounts {
+        if let Some(mounts) = &raw_config.mounts {
             for mount_config in mounts {
-                let destination = config.root.path.join(
-                    &mount_config
-                        .destination
-                        .strip_prefix("/")
-                        .unwrap_or_else(|e| {
+                let destination =
+                    root_path.join(&mount_config.destination.strip_prefix("/").unwrap_or_else(
+                        |e| {
                             panic!(
                                 "failed to strip prefix from {}: {}",
                                 mount_config.destination.display(),
                                 e
                             )
-                        }),
-                );
+                        },
+                    ));
                 fs::create_dir_all(&destination).unwrap_or_else(|e| {
                     panic!("failed to create: {}: {}", destination.display(), e)
                 });
@@ -97,7 +97,7 @@ fn start_container(config: Config) {
         }
 
         for path in ["dev/null", "dev/zero", "dev/urandom", "dev/tty"] {
-            let destination = &config.root.path.join(path);
+            let destination = &root_path.join(path);
             fs::File::create(destination)
                 .unwrap_or_else(|e| panic!("failed to create {}: {}", destination.display(), e));
             mount(
@@ -112,16 +112,16 @@ fn start_container(config: Config) {
 
         fs::create_dir(&old_root).expect("failed to create old_root");
         chdir("/").expect("failed to change current working directory");
-        pivot_root(&config.root.path, &old_root).expect("failed to pivot root");
+        pivot_root(root_path, &old_root).expect("failed to pivot root");
 
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
-        if let Some(hostname) = &config.hostname {
+        if let Some(hostname) = &raw_config.hostname {
             sethostname(hostname).expect("failed to set hostname");
         }
 
-        if config.root.readonly == Some(true) {
+        if raw_config.root.readonly == Some(true) {
             mount(
                 None::<&str>,
                 "/",
@@ -132,7 +132,7 @@ fn start_container(config: Config) {
             .expect("failed to remount / as read only");
         }
 
-        for path in config.linux.masked_paths.clone().unwrap_or_default() {
+        for path in raw_config.linux.masked_paths.clone().unwrap_or_default() {
             let metadata = fs::metadata(&path);
             match metadata {
                 Ok(m) if m.is_dir() => {
@@ -159,7 +159,7 @@ fn start_container(config: Config) {
             }
         }
 
-        if let Some(readonly_paths) = &config.linux.readonly_paths {
+        if let Some(readonly_paths) = &raw_config.linux.readonly_paths {
             for path in readonly_paths {
                 mount(
                     Some(path),
@@ -182,7 +182,7 @@ fn start_container(config: Config) {
             }
         }
 
-        if let Some(process) = &config.process {
+        if let Some(process) = &raw_config.process {
             // Change current working directory
             chdir(&process.cwd)
                 .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
@@ -284,14 +284,14 @@ fn start_container(config: Config) {
         clone(
             cb,
             &mut stack,
-            CloneFlags::from(&config.linux),
+            CloneFlags::from(&raw_config.linux),
             Some(Signal::SIGCHLD as i32),
         )
     }
     .expect("failed to clone process");
     close(read_fd).expect("failed to close read_fd in parent");
 
-    if let Some(uid_mappings) = &config.linux.uid_mappings {
+    if let Some(uid_mappings) = &raw_config.linux.uid_mappings {
         fs::write(
             format!("/proc/{}/uid_map", pid),
             create_id_map_contents(uid_mappings),
@@ -299,7 +299,7 @@ fn start_container(config: Config) {
         .expect("failed to write to uid_map");
     }
 
-    if let Some(gid_mappings) = &config.linux.gid_mappings {
+    if let Some(gid_mappings) = &raw_config.linux.gid_mappings {
         fs::write(format!("/proc/{}/setgroups", pid), "deny")
             .expect("failed to write to setgroups");
         fs::write(
@@ -348,15 +348,15 @@ fn main() {
         }
     }
 
-    match validation::validate(config.clone()) {
-        Ok(_) => {}
+    let validated_config = match validation::validate(config.clone()) {
+        Ok(config) => config,
         Err(errors) => {
             for error in errors {
                 eprintln!("{}", error);
-                exit(1);
             }
+            exit(1);
         }
-    }
+    };
 
-    start_container(config);
+    start_container(config, validated_config);
 }

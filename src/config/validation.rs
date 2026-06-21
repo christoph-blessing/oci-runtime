@@ -87,7 +87,7 @@ impl ExistingDir {
         Ok(Self(path))
     }
 
-    fn as_path(&self) -> &Path {
+    pub fn as_path(&self) -> &Path {
         self.0.as_path()
     }
 }
