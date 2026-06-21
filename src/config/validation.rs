@@ -49,6 +49,13 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         }
     };
 
+    let mut validated_mounts = Vec::new();
+    if let Some(raw_mounts) = raw_config.mounts {
+        for raw_mount in raw_mounts {
+            validated_mounts.push(validate_mount(raw_mount));
+        }
+    }
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -60,6 +67,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
             path: root_path.unwrap(),
             readonly: raw_config.root.readonly.unwrap_or(false),
         },
+        mounts: validated_mounts,
     })
 }
 
@@ -99,6 +107,7 @@ fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
 }
 
 // Mount validation
+#[derive(Debug)]
 pub struct AbsolutePath(PathBuf);
 
 impl AbsolutePath {
@@ -106,7 +115,7 @@ impl AbsolutePath {
         Self(PathBuf::from("/").join(path))
     }
 
-    fn as_path(&self) -> &Path {
+    pub fn as_path(&self) -> &Path {
         self.0.as_path()
     }
 }
@@ -114,6 +123,9 @@ impl AbsolutePath {
 fn validate_mount(config: MountConfig) -> ValidatedMountConfig {
     ValidatedMountConfig {
         destination: AbsolutePath::new(config.destination),
+        kind: config.kind,
+        source: config.source,
+        options: config.options,
     }
 }
 #[cfg(test)]
