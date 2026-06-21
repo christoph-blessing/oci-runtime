@@ -428,12 +428,24 @@ fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
 
 // Mount validation
 struct ValidatedMountConfig {
-    destination: PathBuf,
+    destination: AbsolutePath,
+}
+
+struct AbsolutePath(PathBuf);
+
+impl AbsolutePath {
+    fn new(path: PathBuf) -> Self {
+        Self(PathBuf::from("/").join(path))
+    }
+
+    fn as_path(&self) -> &Path {
+        self.0.as_path()
+    }
 }
 
 fn validate_mount(config: raw_config::MountConfig) -> ValidatedMountConfig {
     ValidatedMountConfig {
-        destination: PathBuf::from("/").join(config.destination),
+        destination: AbsolutePath::new(config.destination),
     }
 }
 
@@ -507,6 +519,6 @@ mod tests {
             source: None,
             options: None,
         };
-        assert!(validate_mount(config).destination.is_absolute())
+        assert!(validate_mount(config).destination.as_path().is_absolute())
     }
 }
