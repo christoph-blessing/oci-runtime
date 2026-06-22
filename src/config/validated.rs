@@ -2,6 +2,7 @@ use super::validation::AbsolutePath;
 use super::validation::ExistingDir;
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
+use nix::sys::resource::Resource;
 use semver::Version;
 
 #[derive(Debug)]
@@ -35,6 +36,7 @@ pub struct ProcessConfig {
     pub user: UserConfig,
     pub capabilities: CapabilitiesConfig,
     pub no_new_privileges: bool,
+    pub rlimits: Vec<RlimitConfig>,
 }
 
 #[derive(Debug)]
@@ -50,4 +52,11 @@ pub struct CapabilitiesConfig {
     pub inheritable: CapsHashSet,
     pub permitted: CapsHashSet,
     pub ambient: CapsHashSet,
+}
+
+#[derive(Debug)]
+pub struct RlimitConfig {
+    pub resource: Resource,
+    pub soft: u64,
+    pub hard: u64,
 }

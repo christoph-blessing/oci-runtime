@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
+use nix::sys::resource::Resource;
 use semver::Version;
 use semver::VersionReq;
 
@@ -11,10 +12,12 @@ use crate::config::raw::MountConfig;
 use crate::config::raw::ProcessConfig;
 
 use super::raw::Config as RawConfig;
+use super::raw::RlimitKind;
 use super::validated::CapabilitiesConfig as ValidatedCapabilitiesConfig;
 use super::validated::Config as ValidatedConfig;
 use super::validated::MountConfig as ValidatedMountConfig;
 use super::validated::ProcessConfig as ValidatedProcessConfig;
+use super::validated::RlimitConfig as ValidatedRlimitConfig;
 use super::validated::RootConfig as ValidatedRootConfig;
 use super::validated::UserConfig as ValidatedUserConfig;
 
@@ -222,6 +225,32 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
         }
     }
     let no_new_privileges = config.no_new_privileges.unwrap_or(false);
+    let mut rlimits = Vec::new();
+    for raw_rlimit in config.rlimits.unwrap_or_default() {
+        let resource = match raw_rlimit.kind {
+            RlimitKind::As => Resource::RLIMIT_AS,
+            RlimitKind::Core => Resource::RLIMIT_CORE,
+            RlimitKind::Cpu => Resource::RLIMIT_CPU,
+            RlimitKind::Data => Resource::RLIMIT_DATA,
+            RlimitKind::Fsize => Resource::RLIMIT_FSIZE,
+            RlimitKind::Locks => Resource::RLIMIT_LOCKS,
+            RlimitKind::Memlock => Resource::RLIMIT_MEMLOCK,
+            RlimitKind::Msgqueue => Resource::RLIMIT_MSGQUEUE,
+            RlimitKind::Nice => Resource::RLIMIT_NICE,
+            RlimitKind::Nofile => Resource::RLIMIT_NOFILE,
+            RlimitKind::Nproc => Resource::RLIMIT_NPROC,
+            RlimitKind::Rss => Resource::RLIMIT_RSS,
+            RlimitKind::Rtprio => Resource::RLIMIT_RTPRIO,
+            RlimitKind::Rttime => Resource::RLIMIT_RTTIME,
+            RlimitKind::Sigpending => Resource::RLIMIT_SIGPENDING,
+            RlimitKind::Stack => Resource::RLIMIT_STACK,
+        };
+        rlimits.push(ValidatedRlimitConfig {
+            resource,
+            soft: raw_rlimit.soft,
+            hard: raw_rlimit.hard,
+        });
+    }
 
     Ok(ValidatedProcessConfig {
         cwd: AbsolutePath::new(config.cwd),
@@ -230,6 +259,7 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
         user,
         capabilities,
         no_new_privileges,
+        rlimits,
     })
 }
 
