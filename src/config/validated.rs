@@ -59,6 +59,18 @@ pub struct CapabilitiesConfig {
     pub ambient: CapsHashSet,
 }
 
+impl From<raw::CapabilitiesConfig> for CapabilitiesConfig {
+    fn from(value: raw::CapabilitiesConfig) -> Self {
+        Self {
+            effective: value.effective.unwrap_or_default(),
+            bounding: value.bounding.unwrap_or_default(),
+            inheritable: value.inheritable.unwrap_or_default(),
+            permitted: value.permitted.unwrap_or_default(),
+            ambient: value.ambient.unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RlimitConfig {
     pub resource: Resource,
