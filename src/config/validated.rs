@@ -1,3 +1,5 @@
+use crate::config::validation::ValidationError;
+
 use super::raw;
 use super::validation::AbsolutePath;
 use super::validation::ExistingDir;
@@ -71,6 +73,64 @@ pub struct LinuxConfig {
     pub gid_mappings: Vec<IdMappingConfig>,
     pub masked_paths: Vec<AbsolutePath>,
     pub readonly_paths: Vec<AbsolutePath>,
+}
+
+impl TryFrom<raw::LinuxConfig> for LinuxConfig {
+    type Error = ValidationError;
+
+    fn try_from(value: raw::LinuxConfig) -> Result<Self, Self::Error> {
+        let mut clone_flags = CloneFlags::empty();
+        for raw_namespace in value.namespaces {
+            let clone_flag = match raw_namespace.kind {
+                raw::NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
+                raw::NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
+                raw::NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
+                raw::NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
+                raw::NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
+                raw::NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
+                raw::NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
+            };
+            if clone_flags.contains(clone_flag) {
+                return Err(ValidationError::DuplicateNamespace(raw_namespace.kind));
+            }
+            clone_flags |= clone_flag;
+        }
+
+        let uid_mappings = value
+            .uid_mappings
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| IdMappingConfig::from(m))
+            .collect();
+        let gid_mappings = value
+            .gid_mappings
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| IdMappingConfig::from(m))
+            .collect();
+
+        let masked_paths = value
+            .masked_paths
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| AbsolutePath::new(p))
+            .collect();
+
+        let readonly_paths = value
+            .readonly_paths
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| AbsolutePath::new(p))
+            .collect();
+
+        Ok(Self {
+            clone_flags,
+            uid_mappings,
+            gid_mappings,
+            masked_paths,
+            readonly_paths,
+        })
+    }
 }
 
 #[derive(Debug)]

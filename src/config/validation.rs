@@ -4,20 +4,17 @@ use std::path::PathBuf;
 
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
-use nix::sched::CloneFlags;
 use nix::sys::resource::Resource;
 use semver::Version;
 use semver::VersionReq;
 
 use super::raw::Config as RawConfig;
-use super::raw::LinuxConfig;
 use super::raw::MountConfig;
 use super::raw::NamespaceKind;
 use super::raw::ProcessConfig;
 use super::raw::RlimitKind;
 use super::validated::CapabilitiesConfig as ValidatedCapabilitiesConfig;
 use super::validated::Config as ValidatedConfig;
-use super::validated::IdMappingConfig as ValidatedIdMappingConfig;
 use super::validated::LinuxConfig as ValidatedLinuxConfig;
 use super::validated::MountConfig as ValidatedMountConfig;
 use super::validated::ProcessConfig as ValidatedProcessConfig;
@@ -87,7 +84,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         };
     }
 
-    let linux = match validate_linux(raw_config.linux) {
+    let linux = match ValidatedLinuxConfig::try_from(raw_config.linux) {
         Ok(linux) => Some(linux),
         Err(error) => {
             errors.push(error);
@@ -152,7 +149,7 @@ fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
 pub struct AbsolutePath(PathBuf);
 
 impl AbsolutePath {
-    fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf) -> Self {
         Self(PathBuf::from("/").join(path))
     }
 
@@ -280,62 +277,9 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
     })
 }
 
-fn validate_linux(config: LinuxConfig) -> Result<ValidatedLinuxConfig, ValidationError> {
-    let mut clone_flags = CloneFlags::empty();
-    for raw_namespace in config.namespaces {
-        let clone_flag = match raw_namespace.kind {
-            NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
-            NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
-            NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
-            NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
-            NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
-            NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
-            NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
-        };
-        if clone_flags.contains(clone_flag) {
-            return Err(ValidationError::DuplicateNamespace(raw_namespace.kind));
-        }
-        clone_flags |= clone_flag;
-    }
-
-    let uid_mappings = config
-        .uid_mappings
-        .unwrap_or_default()
-        .into_iter()
-        .map(|m| ValidatedIdMappingConfig::from(m))
-        .collect();
-    let gid_mappings = config
-        .gid_mappings
-        .unwrap_or_default()
-        .into_iter()
-        .map(|m| ValidatedIdMappingConfig::from(m))
-        .collect();
-
-    let masked_paths = config
-        .masked_paths
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| AbsolutePath::new(p))
-        .collect();
-
-    let readonly_paths = config
-        .readonly_paths
-        .unwrap_or_default()
-        .into_iter()
-        .map(|p| AbsolutePath::new(p))
-        .collect();
-
-    Ok(ValidatedLinuxConfig {
-        clone_flags,
-        uid_mappings,
-        gid_mappings,
-        masked_paths,
-        readonly_paths,
-    })
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::config::raw::LinuxConfig;
     use tempfile::NamedTempFile;
 
     use crate::config::raw::NamespaceConfig;
@@ -424,7 +368,7 @@ mod tests {
             masked_paths: None,
             readonly_paths: None,
         };
-        let err = validate_linux(config).unwrap_err();
+        let err = ValidatedLinuxConfig::try_from(config).unwrap_err();
         assert!(matches!(err, ValidationError::DuplicateNamespace(_)));
     }
 }
