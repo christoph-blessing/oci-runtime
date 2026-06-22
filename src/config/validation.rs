@@ -18,6 +18,7 @@ use super::validated::ProcessConfig as ValidatedProcessConfig;
 use super::validated::RootConfig as ValidatedRootConfig;
 use super::validated::UserConfig as ValidatedUserConfig;
 
+#[derive(Debug)]
 pub enum ValidationError {
     InvalidVersion(String),
     UnsupportedVersion,
@@ -202,7 +203,7 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
         uid: config.user.uid,
         gid: config.user.gid,
     };
-    let mut capabilities;
+    let capabilities;
     if let Some(raw_capabilites) = config.capabilities {
         capabilities = ValidatedCapabilitiesConfig {
             effective: raw_capabilites.effective.unwrap_or_default(),
@@ -220,6 +221,7 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
             ambient: CapsHashSet::new(),
         }
     }
+    let no_new_privileges = config.no_new_privileges.unwrap_or(false);
 
     Ok(ValidatedProcessConfig {
         cwd: AbsolutePath::new(config.cwd),
@@ -227,6 +229,7 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
         args: config.args,
         user,
         capabilities,
+        no_new_privileges,
     })
 }
 
@@ -287,5 +290,19 @@ mod tests {
         };
         let err = validate_process(config).unwrap_err();
         assert!(matches!(err, ValidationError::EmptyArgs));
+    }
+
+    #[test]
+    fn test_no_new_privileges_none() {
+        let config = ProcessConfig {
+            cwd: PathBuf::from("/some/path"),
+            env: None,
+            args: vec![String::from("ls")],
+            user: UserConfig { uid: 0, gid: 0 },
+            capabilities: None,
+            no_new_privileges: None,
+            rlimits: None,
+        };
+        assert!(validate_process(config).unwrap().no_new_privileges == false);
     }
 }
