@@ -1,3 +1,4 @@
+use super::raw;
 use super::validation::AbsolutePath;
 use super::validation::ExistingDir;
 use caps::CapsHashSet;
@@ -77,4 +78,14 @@ pub struct IdMappingConfig {
     pub container_id: usize,
     pub host_id: usize,
     pub size: usize,
+}
+
+impl From<raw::IdMappingConfig> for IdMappingConfig {
+    fn from(value: raw::IdMappingConfig) -> Self {
+        IdMappingConfig {
+            container_id: value.container_id,
+            host_id: value.host_id,
+            size: value.size,
+        }
+    }
 }

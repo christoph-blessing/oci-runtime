@@ -301,22 +301,14 @@ fn validate_linux(config: LinuxConfig) -> Result<ValidatedLinuxConfig, Validatio
     let uid_mappings = config
         .uid_mappings
         .unwrap_or_default()
-        .iter()
-        .map(|m| ValidatedIdMappingConfig {
-            container_id: m.container_id,
-            host_id: m.host_id,
-            size: m.size,
-        })
+        .into_iter()
+        .map(|m| ValidatedIdMappingConfig::from(m))
         .collect();
     let gid_mappings = config
         .gid_mappings
         .unwrap_or_default()
-        .iter()
-        .map(|m| ValidatedIdMappingConfig {
-            container_id: m.container_id,
-            host_id: m.host_id,
-            size: m.size,
-        })
+        .into_iter()
+        .map(|m| ValidatedIdMappingConfig::from(m))
         .collect();
 
     let masked_paths = config
