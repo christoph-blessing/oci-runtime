@@ -33,6 +33,62 @@ pub struct MountConfig {
     pub flags: MsFlags,
 }
 
+impl From<raw::MountConfig> for MountConfig {
+    fn from(value: raw::MountConfig) -> Self {
+        let mut flags = MsFlags::empty();
+        for option in value.options.unwrap_or_default() {
+            match option.as_str() {
+                "async" => flags &= !MsFlags::MS_SYNCHRONOUS,
+                "atime" => flags &= !MsFlags::MS_NOATIME,
+                "bind" => flags |= MsFlags::MS_BIND,
+                "defaults" => {}
+                "dev" => flags &= !MsFlags::MS_NODEV,
+                "diratime" => flags &= !MsFlags::MS_NODIRATIME,
+                "dirsync" => flags |= MsFlags::MS_DIRSYNC,
+                "exec" => flags &= !MsFlags::MS_NOEXEC,
+                "iversion" => flags |= MsFlags::MS_I_VERSION,
+                "lazytime" => flags |= MsFlags::MS_LAZYTIME,
+                "loud" => flags &= !MsFlags::MS_SILENT,
+                "mand" => flags |= MsFlags::MS_MANDLOCK,
+                "noatime" => flags |= MsFlags::MS_NOATIME,
+                "nodev" => flags |= MsFlags::MS_NODEV,
+                "nodiratime" => flags |= MsFlags::MS_NODIRATIME,
+                "noexec" => flags |= MsFlags::MS_NOEXEC,
+                "noiversion" => flags &= !MsFlags::MS_I_VERSION,
+                "nolazytime" => flags &= !MsFlags::MS_LAZYTIME,
+                "nomand" => flags &= !MsFlags::MS_MANDLOCK,
+                "norelatime" => flags &= !MsFlags::MS_RELATIME,
+                "nostrictatime" => flags &= !MsFlags::MS_STRICTATIME,
+                "nosuid" => flags |= MsFlags::MS_NOSUID,
+                "private" => flags |= MsFlags::MS_PRIVATE,
+                "rbind" => flags |= MsFlags::MS_BIND | MsFlags::MS_REC,
+                "relatime" => flags |= MsFlags::MS_RELATIME,
+                "remount" => flags |= MsFlags::MS_REMOUNT,
+                "ro" => flags |= MsFlags::MS_RDONLY,
+                "rprivate" => flags |= MsFlags::MS_PRIVATE | MsFlags::MS_REC,
+                "rshared" => flags |= MsFlags::MS_SHARED | MsFlags::MS_REC,
+                "rslave" => flags |= MsFlags::MS_SLAVE | MsFlags::MS_REC,
+                "runbindable" => flags |= MsFlags::MS_UNBINDABLE | MsFlags::MS_REC,
+                "rw" => flags &= !MsFlags::MS_RDONLY,
+                "shared" => flags |= MsFlags::MS_SHARED,
+                "silent" => flags |= MsFlags::MS_SILENT,
+                "slave" => flags |= MsFlags::MS_SLAVE,
+                "strictatime" => flags |= MsFlags::MS_STRICTATIME,
+                "suid" => flags &= !MsFlags::MS_NOSUID,
+                "sync" => flags |= MsFlags::MS_SYNCHRONOUS,
+                "unbindable" => flags |= MsFlags::MS_UNBINDABLE,
+                _ => {}
+            }
+        }
+        Self {
+            destination: AbsolutePath::new(value.destination),
+            kind: value.kind,
+            source: value.source,
+            flags,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ProcessConfig {
     pub cwd: AbsolutePath,

@@ -2,12 +2,10 @@ use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 
-use nix::mount::MsFlags;
 use semver::Version;
 use semver::VersionReq;
 
 use super::raw::Config as RawConfig;
-use super::raw::MountConfig;
 use super::raw::NamespaceKind;
 use super::validated::Config as ValidatedConfig;
 use super::validated::LinuxConfig as ValidatedLinuxConfig;
@@ -62,7 +60,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
     let mut mounts = Vec::new();
     if let Some(raw_mounts) = raw_config.mounts {
         for raw_mount in raw_mounts {
-            mounts.push(validate_mount(raw_mount));
+            mounts.push(ValidatedMountConfig::from(raw_mount));
         }
     }
 
@@ -151,66 +149,14 @@ impl AbsolutePath {
     }
 }
 
-fn validate_mount(config: MountConfig) -> ValidatedMountConfig {
-    let mut flags = MsFlags::empty();
-    for option in config.options.unwrap_or_default() {
-        match option.as_str() {
-            "async" => flags &= !MsFlags::MS_SYNCHRONOUS,
-            "atime" => flags &= !MsFlags::MS_NOATIME,
-            "bind" => flags |= MsFlags::MS_BIND,
-            "defaults" => {}
-            "dev" => flags &= !MsFlags::MS_NODEV,
-            "diratime" => flags &= !MsFlags::MS_NODIRATIME,
-            "dirsync" => flags |= MsFlags::MS_DIRSYNC,
-            "exec" => flags &= !MsFlags::MS_NOEXEC,
-            "iversion" => flags |= MsFlags::MS_I_VERSION,
-            "lazytime" => flags |= MsFlags::MS_LAZYTIME,
-            "loud" => flags &= !MsFlags::MS_SILENT,
-            "mand" => flags |= MsFlags::MS_MANDLOCK,
-            "noatime" => flags |= MsFlags::MS_NOATIME,
-            "nodev" => flags |= MsFlags::MS_NODEV,
-            "nodiratime" => flags |= MsFlags::MS_NODIRATIME,
-            "noexec" => flags |= MsFlags::MS_NOEXEC,
-            "noiversion" => flags &= !MsFlags::MS_I_VERSION,
-            "nolazytime" => flags &= !MsFlags::MS_LAZYTIME,
-            "nomand" => flags &= !MsFlags::MS_MANDLOCK,
-            "norelatime" => flags &= !MsFlags::MS_RELATIME,
-            "nostrictatime" => flags &= !MsFlags::MS_STRICTATIME,
-            "nosuid" => flags |= MsFlags::MS_NOSUID,
-            "private" => flags |= MsFlags::MS_PRIVATE,
-            "rbind" => flags |= MsFlags::MS_BIND | MsFlags::MS_REC,
-            "relatime" => flags |= MsFlags::MS_RELATIME,
-            "remount" => flags |= MsFlags::MS_REMOUNT,
-            "ro" => flags |= MsFlags::MS_RDONLY,
-            "rprivate" => flags |= MsFlags::MS_PRIVATE | MsFlags::MS_REC,
-            "rshared" => flags |= MsFlags::MS_SHARED | MsFlags::MS_REC,
-            "rslave" => flags |= MsFlags::MS_SLAVE | MsFlags::MS_REC,
-            "runbindable" => flags |= MsFlags::MS_UNBINDABLE | MsFlags::MS_REC,
-            "rw" => flags &= !MsFlags::MS_RDONLY,
-            "shared" => flags |= MsFlags::MS_SHARED,
-            "silent" => flags |= MsFlags::MS_SILENT,
-            "slave" => flags |= MsFlags::MS_SLAVE,
-            "strictatime" => flags |= MsFlags::MS_STRICTATIME,
-            "suid" => flags &= !MsFlags::MS_NOSUID,
-            "sync" => flags |= MsFlags::MS_SYNCHRONOUS,
-            "unbindable" => flags |= MsFlags::MS_UNBINDABLE,
-            _ => {}
-        }
-    }
-    ValidatedMountConfig {
-        destination: AbsolutePath::new(config.destination),
-        kind: config.kind,
-        source: config.source,
-        flags,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::config::raw::LinuxConfig;
     use tempfile::NamedTempFile;
 
+    use crate::config::raw::MountConfig;
     use crate::config::raw::NamespaceConfig;
+    use crate::config::raw::ProcessConfig;
     use crate::config::raw::UserConfig;
 
     use super::*;
@@ -248,7 +194,12 @@ mod tests {
             source: None,
             options: None,
         };
-        assert!(validate_mount(config).destination.as_path().is_absolute())
+        assert!(
+            ValidatedMountConfig::from(config)
+                .destination
+                .as_path()
+                .is_absolute()
+        )
     }
 
     #[test]
