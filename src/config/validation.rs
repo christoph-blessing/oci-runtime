@@ -204,11 +204,11 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
     let mut capabilities = None;
     if let Some(raw_capabilites) = config.capabilities {
         capabilities = Some(ValidatedCapabilitiesConfig {
-            effective: raw_capabilites.effective,
-            bounding: raw_capabilites.bounding,
-            inheritable: raw_capabilites.inheritable,
-            permitted: raw_capabilites.permitted,
-            ambient: raw_capabilites.ambient,
+            effective: raw_capabilites.effective.unwrap_or_default(),
+            bounding: raw_capabilites.bounding.unwrap_or_default(),
+            inheritable: raw_capabilites.inheritable.unwrap_or_default(),
+            permitted: raw_capabilites.permitted.unwrap_or_default(),
+            ambient: raw_capabilites.ambient.unwrap_or_default(),
         })
     }
 

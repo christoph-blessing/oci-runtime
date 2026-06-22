@@ -44,9 +44,9 @@ pub struct UserConfig {
 
 #[derive(Debug)]
 pub struct CapabilitiesConfig {
-    pub effective: Option<CapsHashSet>,
-    pub bounding: Option<CapsHashSet>,
-    pub inheritable: Option<CapsHashSet>,
-    pub permitted: Option<CapsHashSet>,
-    pub ambient: Option<CapsHashSet>,
+    pub effective: CapsHashSet,
+    pub bounding: CapsHashSet,
+    pub inheritable: CapsHashSet,
+    pub permitted: CapsHashSet,
+    pub ambient: CapsHashSet,
 }
