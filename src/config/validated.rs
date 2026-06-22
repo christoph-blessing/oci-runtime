@@ -33,7 +33,7 @@ pub struct ProcessConfig {
     pub env: Vec<String>,
     pub args: Vec<String>,
     pub user: UserConfig,
-    pub capabilities: Option<CapabilitiesConfig>,
+    pub capabilities: CapabilitiesConfig,
 }
 
 #[derive(Debug)]

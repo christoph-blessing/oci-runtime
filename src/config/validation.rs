@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 
+use caps::CapsHashSet;
 use nix::mount::MsFlags;
 use semver::Version;
 use semver::VersionReq;
@@ -201,15 +202,23 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
         uid: config.user.uid,
         gid: config.user.gid,
     };
-    let mut capabilities = None;
+    let mut capabilities;
     if let Some(raw_capabilites) = config.capabilities {
-        capabilities = Some(ValidatedCapabilitiesConfig {
+        capabilities = ValidatedCapabilitiesConfig {
             effective: raw_capabilites.effective.unwrap_or_default(),
             bounding: raw_capabilites.bounding.unwrap_or_default(),
             inheritable: raw_capabilites.inheritable.unwrap_or_default(),
             permitted: raw_capabilites.permitted.unwrap_or_default(),
             ambient: raw_capabilites.ambient.unwrap_or_default(),
-        })
+        }
+    } else {
+        capabilities = ValidatedCapabilitiesConfig {
+            effective: CapsHashSet::new(),
+            bounding: CapsHashSet::new(),
+            inheritable: CapsHashSet::new(),
+            permitted: CapsHashSet::new(),
+            ambient: CapsHashSet::new(),
+        }
     }
 
     Ok(ValidatedProcessConfig {
