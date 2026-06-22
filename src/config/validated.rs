@@ -66,6 +66,34 @@ pub struct RlimitConfig {
     pub hard: u64,
 }
 
+impl From<raw::RlimitConfig> for RlimitConfig {
+    fn from(value: raw::RlimitConfig) -> Self {
+        let resource = match value.kind {
+            raw::RlimitKind::As => Resource::RLIMIT_AS,
+            raw::RlimitKind::Core => Resource::RLIMIT_CORE,
+            raw::RlimitKind::Cpu => Resource::RLIMIT_CPU,
+            raw::RlimitKind::Data => Resource::RLIMIT_DATA,
+            raw::RlimitKind::Fsize => Resource::RLIMIT_FSIZE,
+            raw::RlimitKind::Locks => Resource::RLIMIT_LOCKS,
+            raw::RlimitKind::Memlock => Resource::RLIMIT_MEMLOCK,
+            raw::RlimitKind::Msgqueue => Resource::RLIMIT_MSGQUEUE,
+            raw::RlimitKind::Nice => Resource::RLIMIT_NICE,
+            raw::RlimitKind::Nofile => Resource::RLIMIT_NOFILE,
+            raw::RlimitKind::Nproc => Resource::RLIMIT_NPROC,
+            raw::RlimitKind::Rss => Resource::RLIMIT_RSS,
+            raw::RlimitKind::Rtprio => Resource::RLIMIT_RTPRIO,
+            raw::RlimitKind::Rttime => Resource::RLIMIT_RTTIME,
+            raw::RlimitKind::Sigpending => Resource::RLIMIT_SIGPENDING,
+            raw::RlimitKind::Stack => Resource::RLIMIT_STACK,
+        };
+        Self {
+            resource,
+            soft: value.soft,
+            hard: value.hard,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct LinuxConfig {
     pub clone_flags: CloneFlags,
