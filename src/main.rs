@@ -6,8 +6,9 @@ use std::process::exit;
 
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
-use config::raw::{Config, IdMappingConfig};
+use config::raw::Config;
 use config::validated::Config as ValidatedConfig;
+use config::validated::IdMappingConfig;
 use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::clone;
@@ -294,23 +295,18 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
     .expect("failed to clone process");
     close(read_fd).expect("failed to close read_fd in parent");
 
-    if let Some(uid_mappings) = &raw_config.linux.uid_mappings {
-        fs::write(
-            format!("/proc/{}/uid_map", pid),
-            create_id_map_contents(uid_mappings),
-        )
-        .expect("failed to write to uid_map");
-    }
+    fs::write(
+        format!("/proc/{}/uid_map", pid),
+        create_id_map_contents(&validated_config.linux.uid_mappings),
+    )
+    .expect("failed to write to uid_map");
 
-    if let Some(gid_mappings) = &raw_config.linux.gid_mappings {
-        fs::write(format!("/proc/{}/setgroups", pid), "deny")
-            .expect("failed to write to setgroups");
-        fs::write(
-            format!("/proc/{}/gid_map", pid),
-            create_id_map_contents(gid_mappings),
-        )
-        .expect("failed to write to gid_map");
-    }
+    fs::write(format!("/proc/{}/setgroups", pid), "deny").expect("failed to write to setgroups");
+    fs::write(
+        format!("/proc/{}/gid_map", pid),
+        create_id_map_contents(&validated_config.linux.gid_mappings),
+    )
+    .expect("failed to write to gid_map");
 
     let mut buffer = vec![0u8; 1];
     let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };

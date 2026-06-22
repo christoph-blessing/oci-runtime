@@ -17,6 +17,7 @@ use super::raw::ProcessConfig;
 use super::raw::RlimitKind;
 use super::validated::CapabilitiesConfig as ValidatedCapabilitiesConfig;
 use super::validated::Config as ValidatedConfig;
+use super::validated::IdMappingConfig as ValidatedIdMappingConfig;
 use super::validated::LinuxConfig as ValidatedLinuxConfig;
 use super::validated::MountConfig as ValidatedMountConfig;
 use super::validated::ProcessConfig as ValidatedProcessConfig;
@@ -296,13 +297,40 @@ fn validate_linux(config: LinuxConfig) -> Result<ValidatedLinuxConfig, Validatio
         }
         clone_flags |= clone_flag;
     }
-    Ok(ValidatedLinuxConfig { clone_flags })
+
+    let uid_mappings = config
+        .uid_mappings
+        .unwrap_or_default()
+        .iter()
+        .map(|m| ValidatedIdMappingConfig {
+            container_id: m.container_id,
+            host_id: m.host_id,
+            size: m.size,
+        })
+        .collect();
+    let gid_mappings = config
+        .gid_mappings
+        .unwrap_or_default()
+        .iter()
+        .map(|m| ValidatedIdMappingConfig {
+            container_id: m.container_id,
+            host_id: m.host_id,
+            size: m.size,
+        })
+        .collect();
+
+    Ok(ValidatedLinuxConfig {
+        clone_flags,
+        uid_mappings,
+        gid_mappings,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use tempfile::NamedTempFile;
 
+    use crate::config::raw::NamespaceConfig;
     use crate::config::raw::UserConfig;
 
     use super::*;

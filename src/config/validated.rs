@@ -66,4 +66,13 @@ pub struct RlimitConfig {
 #[derive(Debug)]
 pub struct LinuxConfig {
     pub clone_flags: CloneFlags,
+    pub uid_mappings: Vec<IdMappingConfig>,
+    pub gid_mappings: Vec<IdMappingConfig>,
+}
+
+#[derive(Debug)]
+pub struct IdMappingConfig {
+    pub container_id: usize,
+    pub host_id: usize,
+    pub size: usize,
 }
