@@ -49,7 +49,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         }
     };
 
-    let root_path = match validate_root_path(raw_config.root.path) {
+    let root = match ValidatedRootConfig::try_from(raw_config.root) {
         Ok(root_path) => Some(root_path),
         Err(error) => {
             errors.push(error);
@@ -90,10 +90,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
     Ok(ValidatedConfig {
         oci_version: version.unwrap(),
         hostname: raw_config.hostname,
-        root: ValidatedRootConfig {
-            path: root_path.unwrap(),
-            readonly: raw_config.root.readonly.unwrap_or(false),
-        },
+        root: root.unwrap(),
         mounts,
         process,
         linux: linux.unwrap(),
@@ -116,7 +113,7 @@ fn validate_version(version: String) -> Result<Version, ValidationError> {
 pub struct ExistingDir(PathBuf);
 
 impl ExistingDir {
-    fn new(path: PathBuf) -> Result<Self, ValidationError> {
+    pub fn new(path: PathBuf) -> Result<Self, ValidationError> {
         if !path.exists() {
             return Err(ValidationError::PathNotFound(path));
         }
@@ -129,10 +126,6 @@ impl ExistingDir {
     pub fn as_path(&self) -> &Path {
         self.0.as_path()
     }
-}
-
-fn validate_root_path(path: PathBuf) -> Result<ExistingDir, ValidationError> {
-    ExistingDir::new(path)
 }
 
 // Mount validation
@@ -152,6 +145,7 @@ impl AbsolutePath {
 #[cfg(test)]
 mod tests {
     use crate::config::raw::LinuxConfig;
+    use crate::config::raw::RootConfig;
     use tempfile::NamedTempFile;
 
     use crate::config::raw::MountConfig;
@@ -175,14 +169,22 @@ mod tests {
 
     #[test]
     fn test_missing_root_path() {
-        let err = validate_root_path(PathBuf::from("/does/not/exist")).unwrap_err();
+        let err = ValidatedRootConfig::try_from(RootConfig {
+            path: PathBuf::from("/does/not/exist"),
+            readonly: None,
+        })
+        .unwrap_err();
         assert!(matches!(err, ValidationError::PathNotFound(_)))
     }
 
     #[test]
     fn test_root_path_not_a_directory() {
         let file = NamedTempFile::new().unwrap();
-        let err = validate_root_path(file.path().to_owned()).unwrap_err();
+        let err = ValidatedRootConfig::try_from(RootConfig {
+            path: file.path().to_owned(),
+            readonly: None,
+        })
+        .unwrap_err();
         assert!(matches!(err, ValidationError::NotADirectory(_)));
     }
 

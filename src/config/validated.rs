@@ -25,6 +25,21 @@ pub struct RootConfig {
     pub readonly: bool,
 }
 
+impl TryFrom<raw::RootConfig> for RootConfig {
+    type Error = ValidationError;
+    fn try_from(value: raw::RootConfig) -> Result<Self, Self::Error> {
+        let path = match ExistingDir::new(value.path) {
+            Ok(path) => path,
+            Err(error) => return Err(error),
+        };
+
+        Ok(Self {
+            path,
+            readonly: value.readonly.unwrap_or(false),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct MountConfig {
     pub destination: AbsolutePath,
