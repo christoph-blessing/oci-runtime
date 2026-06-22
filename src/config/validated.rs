@@ -68,6 +68,7 @@ pub struct LinuxConfig {
     pub clone_flags: CloneFlags,
     pub uid_mappings: Vec<IdMappingConfig>,
     pub gid_mappings: Vec<IdMappingConfig>,
+    pub masked_paths: Vec<AbsolutePath>,
 }
 
 #[derive(Debug)]

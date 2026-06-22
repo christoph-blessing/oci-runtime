@@ -131,28 +131,32 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
             .expect("failed to remount / as read only");
         }
 
-        for path in raw_config.linux.masked_paths.clone().unwrap_or_default() {
-            let metadata = fs::metadata(&path);
+        for path in &validated_config.linux.masked_paths {
+            let metadata = fs::metadata(path.as_path());
             match metadata {
                 Ok(m) if m.is_dir() => {
                     mount(
                         Some("tmpfs"),
-                        &path,
+                        path.as_path(),
                         Some("tmpfs"),
                         MsFlags::MS_RDONLY,
                         None::<&str>,
                     )
-                    .unwrap_or_else(|e| panic!("failed to mask dir {}: {}", path.display(), e));
+                    .unwrap_or_else(|e| {
+                        panic!("failed to mask dir {}: {}", path.as_path().display(), e)
+                    });
                 }
                 Ok(_) => {
                     mount(
                         Some("/dev/null"),
-                        &path,
+                        path.as_path(),
                         None::<&str>,
                         MsFlags::MS_BIND,
                         None::<&str>,
                     )
-                    .unwrap_or_else(|e| panic!("failed to mask file {}: {}", path.display(), e));
+                    .unwrap_or_else(|e| {
+                        panic!("failed to mask file {}: {}", path.as_path().display(), e)
+                    });
                 }
                 Err(_) => {}
             }
