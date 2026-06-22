@@ -4,17 +4,20 @@ use std::path::PathBuf;
 
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
+use nix::sched::CloneFlags;
 use nix::sys::resource::Resource;
 use semver::Version;
 use semver::VersionReq;
 
-use crate::config::raw::MountConfig;
-use crate::config::raw::ProcessConfig;
-
 use super::raw::Config as RawConfig;
+use super::raw::LinuxConfig;
+use super::raw::MountConfig;
+use super::raw::NamespaceKind;
+use super::raw::ProcessConfig;
 use super::raw::RlimitKind;
 use super::validated::CapabilitiesConfig as ValidatedCapabilitiesConfig;
 use super::validated::Config as ValidatedConfig;
+use super::validated::LinuxConfig as ValidatedLinuxConfig;
 use super::validated::MountConfig as ValidatedMountConfig;
 use super::validated::ProcessConfig as ValidatedProcessConfig;
 use super::validated::RlimitConfig as ValidatedRlimitConfig;
@@ -28,6 +31,7 @@ pub enum ValidationError {
     PathNotFound(PathBuf),
     NotADirectory(PathBuf),
     EmptyArgs,
+    DuplicateNamespace(NamespaceKind),
 }
 
 impl Display for ValidationError {
@@ -38,6 +42,9 @@ impl Display for ValidationError {
             Self::PathNotFound(p) => write!(f, "root.path does not exist: {}", p.display()),
             Self::NotADirectory(p) => write!(f, "root.path is not a directory: {}", p.display()),
             Self::EmptyArgs => write!(f, "process.args must contain at least one argument"),
+            Self::DuplicateNamespace(n) => {
+                write!(f, "linux.namespaces contains duplicates: {}", n)
+            }
         }
     }
 }
@@ -79,6 +86,14 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         };
     }
 
+    let linux = match validate_linux(raw_config.linux) {
+        Ok(linux) => Some(linux),
+        Err(error) => {
+            errors.push(error);
+            None
+        }
+    };
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -92,6 +107,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
         },
         mounts,
         process,
+        linux: linux.unwrap(),
     })
 }
 
@@ -263,6 +279,26 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
     })
 }
 
+fn validate_linux(config: LinuxConfig) -> Result<ValidatedLinuxConfig, ValidationError> {
+    let mut clone_flags = CloneFlags::empty();
+    for raw_namespace in config.namespaces {
+        let clone_flag = match raw_namespace.kind {
+            NamespaceKind::Pid => CloneFlags::CLONE_NEWPID,
+            NamespaceKind::Network => CloneFlags::CLONE_NEWNET,
+            NamespaceKind::Ipc => CloneFlags::CLONE_NEWIPC,
+            NamespaceKind::Uts => CloneFlags::CLONE_NEWUTS,
+            NamespaceKind::Mount => CloneFlags::CLONE_NEWNS,
+            NamespaceKind::Cgroup => CloneFlags::CLONE_NEWCGROUP,
+            NamespaceKind::User => CloneFlags::CLONE_NEWUSER,
+        };
+        if clone_flags.contains(clone_flag) {
+            return Err(ValidationError::DuplicateNamespace(raw_namespace.kind));
+        }
+        clone_flags |= clone_flag;
+    }
+    Ok(ValidatedLinuxConfig { clone_flags })
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::NamedTempFile;
@@ -334,5 +370,25 @@ mod tests {
             rlimits: None,
         };
         assert!(validate_process(config).unwrap().no_new_privileges == false);
+    }
+
+    #[test]
+    fn test_duplicate_namespaces() {
+        let config = LinuxConfig {
+            namespaces: vec![
+                NamespaceConfig {
+                    kind: NamespaceKind::Pid,
+                },
+                NamespaceConfig {
+                    kind: NamespaceKind::Pid,
+                },
+            ],
+            gid_mappings: None,
+            uid_mappings: None,
+            masked_paths: None,
+            readonly_paths: None,
+        };
+        let err = validate_linux(config).unwrap_err();
+        assert!(matches!(err, ValidationError::DuplicateNamespace(_)));
     }
 }

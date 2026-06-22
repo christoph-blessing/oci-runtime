@@ -10,7 +10,7 @@ use config::raw::{Config, IdMappingConfig};
 use config::validated::Config as ValidatedConfig;
 use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
-use nix::sched::{CloneFlags, clone};
+use nix::sched::clone;
 use nix::sys::prctl::set_no_new_privs;
 use nix::sys::resource::setrlimit;
 use nix::sys::signal::Signal;
@@ -287,7 +287,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         clone(
             cb,
             &mut stack,
-            CloneFlags::from(&raw_config.linux),
+            validated_config.linux.clone_flags,
             Some(Signal::SIGCHLD as i32),
         )
     }

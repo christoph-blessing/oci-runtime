@@ -1,7 +1,7 @@
 use caps::CapsHashSet;
 use nix::{sched::CloneFlags, sys::resource::Resource};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::{fmt::Display, path::PathBuf};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,16 +51,6 @@ pub struct LinuxConfig {
     pub readonly_paths: Option<Vec<PathBuf>>,
 }
 
-impl From<&LinuxConfig> for CloneFlags {
-    fn from(value: &LinuxConfig) -> Self {
-        let mut flags = CloneFlags::empty();
-        for namespace in &value.namespaces {
-            flags |= CloneFlags::from(&namespace.kind)
-        }
-        flags
-    }
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct UserConfig {
     pub uid: u32,
@@ -87,7 +77,7 @@ pub struct RlimitConfig {
 #[derive(Clone, Debug, Deserialize)]
 pub struct NamespaceConfig {
     #[serde(rename = "type")]
-    kind: NamespaceKind,
+    pub kind: NamespaceKind,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -160,7 +150,7 @@ impl From<&RlimitKind> for Resource {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum NamespaceKind {
+pub enum NamespaceKind {
     Pid,
     Network,
     Ipc,
@@ -168,6 +158,21 @@ enum NamespaceKind {
     Mount,
     Cgroup,
     User,
+}
+
+impl Display for NamespaceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            NamespaceKind::Pid => "pid",
+            NamespaceKind::Network => "network",
+            NamespaceKind::Ipc => "ipc",
+            NamespaceKind::Uts => "uts",
+            NamespaceKind::Mount => "mount",
+            NamespaceKind::Cgroup => "cgroup",
+            NamespaceKind::User => "user",
+        };
+        write!(f, "{}", text)
+    }
 }
 
 impl From<&NamespaceKind> for CloneFlags {

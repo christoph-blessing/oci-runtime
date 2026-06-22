@@ -2,6 +2,7 @@ use super::validation::AbsolutePath;
 use super::validation::ExistingDir;
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
+use nix::sched::CloneFlags;
 use nix::sys::resource::Resource;
 use semver::Version;
 
@@ -12,6 +13,7 @@ pub struct Config {
     pub root: RootConfig,
     pub mounts: Vec<MountConfig>,
     pub process: Option<ProcessConfig>,
+    pub linux: LinuxConfig,
 }
 
 #[derive(Debug)]
@@ -59,4 +61,9 @@ pub struct RlimitConfig {
     pub resource: Resource,
     pub soft: u64,
     pub hard: u64,
+}
+
+#[derive(Debug)]
+pub struct LinuxConfig {
+    pub clone_flags: CloneFlags,
 }
