@@ -9,7 +9,6 @@ use caps::{CapSet, CapsHashSet};
 use config::raw::Config as RawConfig;
 use config::validated::Config;
 use config::validated::IdMappingConfig;
-use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::clone;
 use nix::sys::prctl::set_no_new_privs;
@@ -345,7 +344,7 @@ fn main() {
         serde_json::from_str(&config_string).expect("failed to parse config");
     raw_config.root.path = bundle_path.join(raw_config.root.path);
 
-    let config = match validation::validate(raw_config) {
+    let config = match Config::try_from(raw_config) {
         Ok(config) => config,
         Err(errors) => {
             eprintln!("{}", errors);
