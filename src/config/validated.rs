@@ -146,16 +146,6 @@ impl TryFrom<raw::Config> for Config {
     }
 }
 
-impl From<raw::IdMappingConfig> for IdMappingConfig {
-    fn from(value: raw::IdMappingConfig) -> Self {
-        IdMappingConfig {
-            container_id: value.container_id,
-            host_id: value.host_id,
-            size: value.size,
-        }
-    }
-}
-
 impl TryFrom<raw::RootConfig> for RootConfig {
     type Error = ValidationError;
     fn try_from(value: raw::RootConfig) -> Result<Self, Self::Error> {
@@ -370,6 +360,16 @@ impl TryFrom<raw::LinuxConfig> for LinuxConfig {
             masked_paths,
             readonly_paths,
         })
+    }
+}
+
+impl From<raw::IdMappingConfig> for IdMappingConfig {
+    fn from(value: raw::IdMappingConfig) -> Self {
+        IdMappingConfig {
+            container_id: value.container_id,
+            host_id: value.host_id,
+            size: value.size,
+        }
     }
 }
 
