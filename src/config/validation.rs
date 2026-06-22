@@ -326,11 +326,19 @@ fn validate_linux(config: LinuxConfig) -> Result<ValidatedLinuxConfig, Validatio
         .map(|p| AbsolutePath::new(p))
         .collect();
 
+    let readonly_paths = config
+        .readonly_paths
+        .unwrap_or_default()
+        .into_iter()
+        .map(|p| AbsolutePath::new(p))
+        .collect();
+
     Ok(ValidatedLinuxConfig {
         clone_flags,
         uid_mappings,
         gid_mappings,
         masked_paths,
+        readonly_paths,
     })
 }
 

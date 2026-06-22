@@ -69,6 +69,7 @@ pub struct LinuxConfig {
     pub uid_mappings: Vec<IdMappingConfig>,
     pub gid_mappings: Vec<IdMappingConfig>,
     pub masked_paths: Vec<AbsolutePath>,
+    pub readonly_paths: Vec<AbsolutePath>,
 }
 
 #[derive(Debug)]

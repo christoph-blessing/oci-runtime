@@ -6,8 +6,8 @@ use std::process::exit;
 
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
-use config::raw::Config;
-use config::validated::Config as ValidatedConfig;
+use config::raw::Config as RawConfig;
+use config::validated::Config;
 use config::validated::IdMappingConfig;
 use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
@@ -24,7 +24,7 @@ mod config;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
+fn start_container(config: Config) {
     let mut stack = vec![0u8; STACK_SIZE];
     let (read_fd, write_fd) = pipe().expect("failed to create pipe");
     let read_fd = read_fd.into_raw_fd();
@@ -46,7 +46,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         )
         .expect("failed to make mounts private");
 
-        let root_path = validated_config.root.path.as_path();
+        let root_path = config.root.path.as_path();
         let old_root = root_path.join("old_root");
         let old_root_after_pivot = "/old_root";
         mount(
@@ -58,7 +58,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         )
         .expect("failed to bind mount new_root");
 
-        for mount_config in &validated_config.mounts {
+        for mount_config in &config.mounts {
             let destination = root_path.join(
                 &mount_config
                     .destination
@@ -116,11 +116,11 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         umount2(old_root_after_pivot, MntFlags::MNT_DETACH).expect("failed to unmount old_root");
         fs::remove_dir(old_root_after_pivot).expect("failed to remove old_root");
 
-        if let Some(hostname) = &validated_config.hostname {
+        if let Some(hostname) = &config.hostname {
             sethostname(hostname).expect("failed to set hostname");
         }
 
-        if validated_config.root.readonly {
+        if config.root.readonly {
             mount(
                 None::<&str>,
                 "/",
@@ -131,7 +131,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
             .expect("failed to remount / as read only");
         }
 
-        for path in &validated_config.linux.masked_paths {
+        for path in &config.linux.masked_paths {
             let metadata = fs::metadata(path.as_path());
             match metadata {
                 Ok(m) if m.is_dir() => {
@@ -162,30 +162,32 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
             }
         }
 
-        if let Some(readonly_paths) = &raw_config.linux.readonly_paths {
-            for path in readonly_paths {
-                mount(
-                    Some(path),
-                    path,
-                    None::<&str>,
-                    MsFlags::MS_BIND,
-                    None::<&str>,
+        for path in &config.linux.readonly_paths {
+            mount(
+                Some(path.as_path()),
+                path.as_path(),
+                None::<&str>,
+                MsFlags::MS_BIND,
+                None::<&str>,
+            )
+            .unwrap_or_else(|e| panic!("failed to bind mount {}: {}", path.as_path().display(), e));
+            mount(
+                Some(path.as_path()),
+                path.as_path(),
+                None::<&str>,
+                MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
+                None::<&str>,
+            )
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to remount as read only {}: {}",
+                    path.as_path().display(),
+                    e
                 )
-                .unwrap_or_else(|e| panic!("failed to bind mount {}: {}", path.display(), e));
-                mount(
-                    Some(path),
-                    path,
-                    None::<&str>,
-                    MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
-                    None::<&str>,
-                )
-                .unwrap_or_else(|e| {
-                    panic!("failed to remount as read only {}: {}", path.display(), e)
-                });
-            }
+            });
         }
 
-        if let Some(process) = &validated_config.process {
+        if let Some(process) = &config.process {
             // Change current working directory
             chdir(process.cwd.as_path()).unwrap_or_else(|e| {
                 panic!(
@@ -292,7 +294,7 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
         clone(
             cb,
             &mut stack,
-            validated_config.linux.clone_flags,
+            config.linux.clone_flags,
             Some(Signal::SIGCHLD as i32),
         )
     }
@@ -301,14 +303,14 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
 
     fs::write(
         format!("/proc/{}/uid_map", pid),
-        create_id_map_contents(&validated_config.linux.uid_mappings),
+        create_id_map_contents(&config.linux.uid_mappings),
     )
     .expect("failed to write to uid_map");
 
     fs::write(format!("/proc/{}/setgroups", pid), "deny").expect("failed to write to setgroups");
     fs::write(
         format!("/proc/{}/gid_map", pid),
-        create_id_map_contents(&validated_config.linux.gid_mappings),
+        create_id_map_contents(&config.linux.gid_mappings),
     )
     .expect("failed to write to gid_map");
 
@@ -339,16 +341,17 @@ fn main() {
     );
     let config_path = bundle_path.join("config.json");
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
-    let mut config: Config = serde_json::from_str(&config_string).expect("failed to parse config");
-    config.root.path = bundle_path.join(config.root.path);
+    let mut raw_config: RawConfig =
+        serde_json::from_str(&config_string).expect("failed to parse config");
+    raw_config.root.path = bundle_path.join(raw_config.root.path);
 
-    if let Some(mounts) = &mut config.mounts {
+    if let Some(mounts) = &mut raw_config.mounts {
         for mount in mounts {
             mount.destination = PathBuf::from("/").join(mount.destination.clone());
         }
     }
 
-    let validated_config = match validation::validate(config.clone()) {
+    let config = match validation::validate(raw_config) {
         Ok(config) => config,
         Err(errors) => {
             for error in errors {
@@ -358,5 +361,5 @@ fn main() {
         }
     };
 
-    start_container(config, validated_config);
+    start_container(config);
 }
