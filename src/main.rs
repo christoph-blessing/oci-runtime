@@ -345,12 +345,6 @@ fn main() {
         serde_json::from_str(&config_string).expect("failed to parse config");
     raw_config.root.path = bundle_path.join(raw_config.root.path);
 
-    if let Some(mounts) = &mut raw_config.mounts {
-        for mount in mounts {
-            mount.destination = PathBuf::from("/").join(mount.destination.clone());
-        }
-    }
-
     let config = match validation::validate(raw_config) {
         Ok(config) => config,
         Err(errors) => {
