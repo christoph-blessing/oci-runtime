@@ -352,7 +352,7 @@ fn main() {
         Ok(config) => config,
         Err(errors) => {
             for error in errors {
-                eprintln!("{}", error);
+                eprintln!("Error: {}", error);
             }
             exit(1);
         }
