@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::path::Path;
 use std::path::PathBuf;
 
 use semver::Version;
@@ -107,39 +106,6 @@ fn validate_version(version: String) -> Result<Version, ValidationError> {
         }
     }
     version_result
-}
-
-#[derive(Debug)]
-pub struct ExistingDir(PathBuf);
-
-impl ExistingDir {
-    pub fn new(path: PathBuf) -> Result<Self, ValidationError> {
-        if !path.exists() {
-            return Err(ValidationError::PathNotFound(path));
-        }
-        if !path.is_dir() {
-            return Err(ValidationError::NotADirectory(path));
-        }
-        Ok(Self(path))
-    }
-
-    pub fn as_path(&self) -> &Path {
-        self.0.as_path()
-    }
-}
-
-// Mount validation
-#[derive(Debug)]
-pub struct AbsolutePath(PathBuf);
-
-impl AbsolutePath {
-    pub fn new(path: PathBuf) -> Self {
-        Self(PathBuf::from("/").join(path))
-    }
-
-    pub fn as_path(&self) -> &Path {
-        self.0.as_path()
-    }
 }
 
 #[cfg(test)]

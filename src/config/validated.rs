@@ -1,8 +1,9 @@
+use std::path::Path;
+use std::path::PathBuf;
+
 use crate::config::validation::ValidationError;
 
 use super::raw;
-use super::validation::AbsolutePath;
-use super::validation::ExistingDir;
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
@@ -306,5 +307,37 @@ impl TryFrom<raw::LinuxConfig> for LinuxConfig {
             masked_paths,
             readonly_paths,
         })
+    }
+}
+
+#[derive(Debug)]
+pub struct ExistingDir(PathBuf);
+
+impl ExistingDir {
+    fn new(path: PathBuf) -> Result<Self, ValidationError> {
+        if !path.exists() {
+            return Err(ValidationError::PathNotFound(path));
+        }
+        if !path.is_dir() {
+            return Err(ValidationError::NotADirectory(path));
+        }
+        Ok(Self(path))
+    }
+
+    pub fn as_path(&self) -> &Path {
+        self.0.as_path()
+    }
+}
+
+#[derive(Debug)]
+pub struct AbsolutePath(PathBuf);
+
+impl AbsolutePath {
+    fn new(path: PathBuf) -> Self {
+        Self(PathBuf::from("/").join(path))
+    }
+
+    pub fn as_path(&self) -> &Path {
+        self.0.as_path()
     }
 }
