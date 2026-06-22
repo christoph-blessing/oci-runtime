@@ -44,6 +44,45 @@ pub struct ProcessConfig {
     pub rlimits: Vec<RlimitConfig>,
 }
 
+impl TryFrom<raw::ProcessConfig> for ProcessConfig {
+    type Error = ValidationError;
+    fn try_from(value: raw::ProcessConfig) -> Result<Self, Self::Error> {
+        if value.args.is_empty() {
+            return Err(ValidationError::EmptyArgs);
+        }
+        let user = UserConfig::from(value.user);
+        let capabilities;
+        if let Some(raw_capabilites) = value.capabilities {
+            capabilities = CapabilitiesConfig::from(raw_capabilites)
+        } else {
+            capabilities = CapabilitiesConfig {
+                effective: CapsHashSet::new(),
+                bounding: CapsHashSet::new(),
+                inheritable: CapsHashSet::new(),
+                permitted: CapsHashSet::new(),
+                ambient: CapsHashSet::new(),
+            }
+        }
+        let no_new_privileges = value.no_new_privileges.unwrap_or(false);
+        let rlimits = value
+            .rlimits
+            .unwrap_or_default()
+            .into_iter()
+            .map(|l| RlimitConfig::from(l))
+            .collect();
+
+        Ok(Self {
+            cwd: AbsolutePath::new(value.cwd),
+            env: value.env.unwrap_or_default(),
+            args: value.args,
+            user,
+            capabilities,
+            no_new_privileges,
+            rlimits,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct UserConfig {
     pub uid: u32,

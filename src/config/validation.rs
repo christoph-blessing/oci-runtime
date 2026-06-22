@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::path::Path;
 use std::path::PathBuf;
 
-use caps::CapsHashSet;
 use nix::mount::MsFlags;
 use semver::Version;
 use semver::VersionReq;
@@ -10,15 +9,11 @@ use semver::VersionReq;
 use super::raw::Config as RawConfig;
 use super::raw::MountConfig;
 use super::raw::NamespaceKind;
-use super::raw::ProcessConfig;
-use super::validated::CapabilitiesConfig as ValidatedCapabilitiesConfig;
 use super::validated::Config as ValidatedConfig;
 use super::validated::LinuxConfig as ValidatedLinuxConfig;
 use super::validated::MountConfig as ValidatedMountConfig;
 use super::validated::ProcessConfig as ValidatedProcessConfig;
-use super::validated::RlimitConfig as ValidatedRlimitConfig;
 use super::validated::RootConfig as ValidatedRootConfig;
-use super::validated::UserConfig as ValidatedUserConfig;
 
 #[derive(Debug)]
 pub enum ValidationError {
@@ -73,7 +68,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
 
     let mut process = None;
     if let Some(raw_process) = raw_config.process {
-        process = match validate_process(raw_process) {
+        process = match ValidatedProcessConfig::try_from(raw_process) {
             Ok(process) => Some(process),
             Err(error) => {
                 errors.push(error);
@@ -210,42 +205,6 @@ fn validate_mount(config: MountConfig) -> ValidatedMountConfig {
     }
 }
 
-fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, ValidationError> {
-    if config.args.is_empty() {
-        return Err(ValidationError::EmptyArgs);
-    }
-    let user = ValidatedUserConfig::from(config.user);
-    let capabilities;
-    if let Some(raw_capabilites) = config.capabilities {
-        capabilities = ValidatedCapabilitiesConfig::from(raw_capabilites)
-    } else {
-        capabilities = ValidatedCapabilitiesConfig {
-            effective: CapsHashSet::new(),
-            bounding: CapsHashSet::new(),
-            inheritable: CapsHashSet::new(),
-            permitted: CapsHashSet::new(),
-            ambient: CapsHashSet::new(),
-        }
-    }
-    let no_new_privileges = config.no_new_privileges.unwrap_or(false);
-    let rlimits = config
-        .rlimits
-        .unwrap_or_default()
-        .into_iter()
-        .map(|l| ValidatedRlimitConfig::from(l))
-        .collect();
-
-    Ok(ValidatedProcessConfig {
-        cwd: AbsolutePath::new(config.cwd),
-        env: config.env.unwrap_or_default(),
-        args: config.args,
-        user,
-        capabilities,
-        no_new_privileges,
-        rlimits,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use crate::config::raw::LinuxConfig;
@@ -303,7 +262,7 @@ mod tests {
             no_new_privileges: None,
             rlimits: None,
         };
-        let err = validate_process(config).unwrap_err();
+        let err = ValidatedProcessConfig::try_from(config).unwrap_err();
         assert!(matches!(err, ValidationError::EmptyArgs));
     }
 
@@ -318,7 +277,12 @@ mod tests {
             no_new_privileges: None,
             rlimits: None,
         };
-        assert!(validate_process(config).unwrap().no_new_privileges == false);
+        assert!(
+            ValidatedProcessConfig::try_from(config)
+                .unwrap()
+                .no_new_privileges
+                == false
+        );
     }
 
     #[test]
