@@ -214,10 +214,7 @@ fn validate_process(config: ProcessConfig) -> Result<ValidatedProcessConfig, Val
     if config.args.is_empty() {
         return Err(ValidationError::EmptyArgs);
     }
-    let user = ValidatedUserConfig {
-        uid: config.user.uid,
-        gid: config.user.gid,
-    };
+    let user = ValidatedUserConfig::from(config.user);
     let capabilities;
     if let Some(raw_capabilites) = config.capabilities {
         capabilities = ValidatedCapabilitiesConfig::from(raw_capabilites)

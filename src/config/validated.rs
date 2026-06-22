@@ -50,6 +50,15 @@ pub struct UserConfig {
     pub gid: u32,
 }
 
+impl From<raw::UserConfig> for UserConfig {
+    fn from(value: raw::UserConfig) -> Self {
+        Self {
+            uid: value.uid,
+            gid: value.gid,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CapabilitiesConfig {
     pub effective: CapsHashSet,
