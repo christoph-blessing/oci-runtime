@@ -348,9 +348,7 @@ fn main() {
     let config = match validation::validate(raw_config) {
         Ok(config) => config,
         Err(errors) => {
-            for error in errors {
-                eprintln!("Error: {}", error);
-            }
+            eprintln!("{}", errors);
             exit(1);
         }
     };

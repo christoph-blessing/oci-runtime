@@ -12,6 +12,18 @@ use super::validated::MountConfig as ValidatedMountConfig;
 use super::validated::ProcessConfig as ValidatedProcessConfig;
 use super::validated::RootConfig as ValidatedRootConfig;
 
+pub struct ValidationErrors(Vec<ValidationError>);
+
+impl Display for ValidationErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut text = String::new();
+        for error in &self.0 {
+            text.push_str(format!("    - {}\n", error).as_str());
+        }
+        write!(f, "config validation failed:\n{}", text)
+    }
+}
+
 #[derive(Debug)]
 pub enum ValidationError {
     InvalidVersion(String),
@@ -37,7 +49,7 @@ impl Display for ValidationError {
     }
 }
 
-pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<ValidationError>> {
+pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, ValidationErrors> {
     let mut errors = Vec::new();
 
     let version = match validate_version(raw_config.oci_version) {
@@ -83,7 +95,7 @@ pub fn validate(raw_config: RawConfig) -> Result<ValidatedConfig, Vec<Validation
     };
 
     if !errors.is_empty() {
-        return Err(errors);
+        return Err(ValidationErrors(errors));
     }
 
     Ok(ValidatedConfig {
