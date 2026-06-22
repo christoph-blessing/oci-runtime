@@ -1,4 +1,4 @@
-use caps::{CapSet, CapsHashSet};
+use caps::CapsHashSet;
 use nix::{sched::CloneFlags, sys::resource::Resource};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -74,19 +74,6 @@ pub struct CapabilitiesConfig {
     pub inheritable: Option<CapsHashSet>,
     pub permitted: Option<CapsHashSet>,
     pub ambient: Option<CapsHashSet>,
-}
-
-impl CapabilitiesConfig {
-    pub fn get(&self, cset: CapSet) -> Option<&CapsHashSet> {
-        let capabilities = match cset {
-            CapSet::Ambient => &self.ambient,
-            CapSet::Bounding => &self.bounding,
-            CapSet::Effective => &self.effective,
-            CapSet::Inheritable => &self.inheritable,
-            CapSet::Permitted => &self.permitted,
-        };
-        capabilities.as_ref()
-    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

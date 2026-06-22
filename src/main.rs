@@ -12,7 +12,7 @@ use config::validation;
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
 use nix::sched::{CloneFlags, clone};
 use nix::sys::prctl::set_no_new_privs;
-use nix::sys::resource::{Resource, setrlimit};
+use nix::sys::resource::setrlimit;
 use nix::sys::signal::Signal;
 use nix::sys::wait::waitpid;
 use nix::unistd::{
@@ -180,28 +180,30 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
             }
         }
 
-        if let Some(process) = &raw_config.process {
+        if let Some(process) = &validated_config.process {
             // Change current working directory
-            chdir(&process.cwd)
-                .unwrap_or_else(|e| panic!("failed to chdir to {}: {}", process.cwd.display(), e));
+            chdir(process.cwd.as_path()).unwrap_or_else(|e| {
+                panic!(
+                    "failed to chdir to {}: {}",
+                    process.cwd.as_path().display(),
+                    e
+                )
+            });
 
             // Create envp and get PATH environment variable
-            let mut env_c: Vec<CString> = Vec::new();
-            let mut maybe_path_env: Option<&str> = None;
-            if let Some(env) = &process.env {
-                maybe_path_env = env
-                    .iter()
-                    .find(|&s| s.starts_with("PATH="))
-                    .map(|s| &s[5..]);
-                env_c = env
-                    .iter()
-                    .map(|s| {
-                        CString::new(s.as_str()).unwrap_or_else(|e| {
-                            panic!("failed to create C string from {}: {}", s, e)
-                        })
-                    })
-                    .collect();
-            }
+            let maybe_path_env = process
+                .env
+                .iter()
+                .find(|&s| s.starts_with("PATH="))
+                .map(|s| &s[5..]);
+            let env_c: Vec<CString> = process
+                .env
+                .iter()
+                .map(|s| {
+                    CString::new(s.as_str())
+                        .unwrap_or_else(|e| panic!("failed to create C string from {}: {}", s, e))
+                })
+                .collect();
             let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
 
             // Create argv and try to resolve absolute path to executable
@@ -236,38 +238,41 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
             setuid(Uid::from_raw(process.user.uid)).expect("failed to setuid");
 
             // Set resource limits
-            if let Some(rlimits) = &process.rlimits {
-                for rlimit in rlimits {
-                    let resource = Resource::from(&rlimit.kind);
-                    setrlimit(resource, rlimit.soft, rlimit.hard)
-                        .unwrap_or_else(|e| panic!("failed to set rlimit {:?}: {}", resource, e));
-                }
+            for rlimit in &process.rlimits {
+                setrlimit(rlimit.resource, rlimit.soft, rlimit.hard).unwrap_or_else(|e| {
+                    panic!("failed to set rlimit {:?}: {}", rlimit.resource, e)
+                });
             }
 
             // Set capabilities
-            if let Some(cap_config) = &process.capabilities {
-                let existing_bounding = caps::read(None, CapSet::Bounding)
-                    .expect("failed to read bounding capabilities");
-                let new_bounding = cap_config.bounding.clone().unwrap_or_default();
-                for capability in existing_bounding.difference(&new_bounding) {
-                    caps::drop(None, CapSet::Bounding, *capability).unwrap_or_else(|e| {
-                        panic!("failed to drop bounding capability {}: {}", capability, e)
-                    });
-                }
+            let existing_bounding =
+                caps::read(None, CapSet::Bounding).expect("failed to read bounding capabilities");
+            let new_bounding = &process.capabilities.bounding;
+            for capability in existing_bounding.difference(&new_bounding) {
+                caps::drop(None, CapSet::Bounding, *capability).unwrap_or_else(|e| {
+                    panic!("failed to drop bounding capability {}: {}", capability, e)
+                });
+            }
 
-                for cset in [
-                    CapSet::Inheritable,
-                    CapSet::Effective,
-                    CapSet::Permitted,
-                    CapSet::Ambient,
-                ] {
-                    set_capabilities(cset, cap_config.get(cset))
-                        .unwrap_or_else(|e| panic!("failed to set cap set {:?}: {}", cset, e));
-                }
+            for cset in [
+                CapSet::Inheritable,
+                CapSet::Effective,
+                CapSet::Permitted,
+                CapSet::Ambient,
+            ] {
+                let capabilities = match cset {
+                    CapSet::Ambient => &process.capabilities.ambient,
+                    CapSet::Bounding => &process.capabilities.bounding,
+                    CapSet::Effective => &process.capabilities.effective,
+                    CapSet::Inheritable => &process.capabilities.inheritable,
+                    CapSet::Permitted => &process.capabilities.permitted,
+                };
+                set_capabilities(cset, capabilities)
+                    .unwrap_or_else(|e| panic!("failed to set cap set {:?}: {}", cset, e));
             }
 
             // Prevent process from getting new privileges
-            if process.no_new_privileges == Some(true) {
+            if process.no_new_privileges {
                 set_no_new_privs().expect("failed to set no_new_privs");
             }
 
@@ -315,11 +320,8 @@ fn start_container(raw_config: Config, validated_config: ValidatedConfig) {
     waitpid(pid, None).expect("failed to wait for child");
 }
 
-fn set_capabilities(cset: CapSet, new_caps: Option<&CapsHashSet>) -> Result<(), CapsError> {
-    match new_caps {
-        Some(capabilities) => caps::set(None, cset, capabilities),
-        None => caps::clear(None, cset),
-    }
+fn set_capabilities(cset: CapSet, new_caps: &CapsHashSet) -> Result<(), CapsError> {
+    caps::set(None, cset, new_caps)
 }
 
 fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
