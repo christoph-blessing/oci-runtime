@@ -25,6 +25,73 @@ pub struct RootConfig {
     pub readonly: bool,
 }
 
+#[derive(Debug)]
+pub struct MountConfig {
+    pub destination: AbsolutePath,
+    pub kind: Option<String>,
+    pub source: Option<String>,
+    pub flags: MsFlags,
+}
+
+#[derive(Debug)]
+pub struct ProcessConfig {
+    pub cwd: AbsolutePath,
+    pub env: Vec<String>,
+    pub args: Vec<String>,
+    pub user: UserConfig,
+    pub capabilities: CapabilitiesConfig,
+    pub no_new_privileges: bool,
+    pub rlimits: Vec<RlimitConfig>,
+}
+
+#[derive(Debug)]
+pub struct UserConfig {
+    pub uid: u32,
+    pub gid: u32,
+}
+
+#[derive(Debug)]
+pub struct CapabilitiesConfig {
+    pub effective: CapsHashSet,
+    pub bounding: CapsHashSet,
+    pub inheritable: CapsHashSet,
+    pub permitted: CapsHashSet,
+    pub ambient: CapsHashSet,
+}
+
+#[derive(Debug)]
+pub struct RlimitConfig {
+    pub resource: Resource,
+    pub soft: u64,
+    pub hard: u64,
+}
+
+#[derive(Debug)]
+pub struct LinuxConfig {
+    pub clone_flags: CloneFlags,
+    pub uid_mappings: Vec<IdMappingConfig>,
+    pub gid_mappings: Vec<IdMappingConfig>,
+    pub masked_paths: Vec<AbsolutePath>,
+    pub readonly_paths: Vec<AbsolutePath>,
+}
+
+#[derive(Debug)]
+pub struct IdMappingConfig {
+    pub container_id: usize,
+    pub host_id: usize,
+    pub size: usize,
+}
+
+impl From<raw::IdMappingConfig> for IdMappingConfig {
+    fn from(value: raw::IdMappingConfig) -> Self {
+        IdMappingConfig {
+            container_id: value.container_id,
+            host_id: value.host_id,
+            size: value.size,
+        }
+    }
+}
+
 impl TryFrom<raw::RootConfig> for RootConfig {
     type Error = ValidationError;
     fn try_from(value: raw::RootConfig) -> Result<Self, Self::Error> {
@@ -38,14 +105,6 @@ impl TryFrom<raw::RootConfig> for RootConfig {
             readonly: value.readonly.unwrap_or(false),
         })
     }
-}
-
-#[derive(Debug)]
-pub struct MountConfig {
-    pub destination: AbsolutePath,
-    pub kind: Option<String>,
-    pub source: Option<String>,
-    pub flags: MsFlags,
 }
 
 impl From<raw::MountConfig> for MountConfig {
@@ -104,17 +163,6 @@ impl From<raw::MountConfig> for MountConfig {
     }
 }
 
-#[derive(Debug)]
-pub struct ProcessConfig {
-    pub cwd: AbsolutePath,
-    pub env: Vec<String>,
-    pub args: Vec<String>,
-    pub user: UserConfig,
-    pub capabilities: CapabilitiesConfig,
-    pub no_new_privileges: bool,
-    pub rlimits: Vec<RlimitConfig>,
-}
-
 impl TryFrom<raw::ProcessConfig> for ProcessConfig {
     type Error = ValidationError;
     fn try_from(value: raw::ProcessConfig) -> Result<Self, Self::Error> {
@@ -154,12 +202,6 @@ impl TryFrom<raw::ProcessConfig> for ProcessConfig {
     }
 }
 
-#[derive(Debug)]
-pub struct UserConfig {
-    pub uid: u32,
-    pub gid: u32,
-}
-
 impl From<raw::UserConfig> for UserConfig {
     fn from(value: raw::UserConfig) -> Self {
         Self {
@@ -167,15 +209,6 @@ impl From<raw::UserConfig> for UserConfig {
             gid: value.gid,
         }
     }
-}
-
-#[derive(Debug)]
-pub struct CapabilitiesConfig {
-    pub effective: CapsHashSet,
-    pub bounding: CapsHashSet,
-    pub inheritable: CapsHashSet,
-    pub permitted: CapsHashSet,
-    pub ambient: CapsHashSet,
 }
 
 impl From<raw::CapabilitiesConfig> for CapabilitiesConfig {
@@ -188,13 +221,6 @@ impl From<raw::CapabilitiesConfig> for CapabilitiesConfig {
             ambient: value.ambient.unwrap_or_default(),
         }
     }
-}
-
-#[derive(Debug)]
-pub struct RlimitConfig {
-    pub resource: Resource,
-    pub soft: u64,
-    pub hard: u64,
 }
 
 impl From<raw::RlimitConfig> for RlimitConfig {
@@ -223,15 +249,6 @@ impl From<raw::RlimitConfig> for RlimitConfig {
             hard: value.hard,
         }
     }
-}
-
-#[derive(Debug)]
-pub struct LinuxConfig {
-    pub clone_flags: CloneFlags,
-    pub uid_mappings: Vec<IdMappingConfig>,
-    pub gid_mappings: Vec<IdMappingConfig>,
-    pub masked_paths: Vec<AbsolutePath>,
-    pub readonly_paths: Vec<AbsolutePath>,
 }
 
 impl TryFrom<raw::LinuxConfig> for LinuxConfig {
@@ -289,22 +306,5 @@ impl TryFrom<raw::LinuxConfig> for LinuxConfig {
             masked_paths,
             readonly_paths,
         })
-    }
-}
-
-#[derive(Debug)]
-pub struct IdMappingConfig {
-    pub container_id: usize,
-    pub host_id: usize,
-    pub size: usize,
-}
-
-impl From<raw::IdMappingConfig> for IdMappingConfig {
-    fn from(value: raw::IdMappingConfig) -> Self {
-        IdMappingConfig {
-            container_id: value.container_id,
-            host_id: value.host_id,
-            size: value.size,
-        }
     }
 }
