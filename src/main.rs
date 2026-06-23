@@ -1,7 +1,14 @@
 use clap::{Parser, Subcommand};
 use nix::unistd;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::PathBuf, process};
+use std::{
+    collections::HashMap,
+    fs,
+    io::Read,
+    os::fd::{AsRawFd, BorrowedFd},
+    path::PathBuf,
+    process,
+};
 
 mod config;
 mod legacy;
@@ -22,6 +29,10 @@ enum Commands {
         container_id: String,
         bundle_path: PathBuf,
     },
+    #[command(hide = true)]
+    Shim {
+        ready_fd: i32,
+    },
 }
 
 fn main() {
@@ -33,6 +44,10 @@ fn main() {
         } => create(container_id, bundle_path),
         Commands::Legacy { bundle_path } => {
             legacy::main(bundle_path);
+        }
+        Commands::Shim { ready_fd } => {
+            let mut buffer = [0u8; 1];
+            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(*ready_fd) }, &mut buffer);
         }
     }
 }
@@ -77,4 +92,16 @@ fn create(container_id: &String, bundle_path: &PathBuf) {
     };
     let json = serde_json::to_string(&state).expect("failed to serialize state");
     fs::write(container_dir.join("state.json"), json).expect("failed to write state");
+
+    let (mut pipe_reader, pipe_writer) = std::io::pipe().expect("failed to create pipe");
+    let program = std::env::current_exe().expect("failed to get current exe");
+    let child = process::Command::new(program)
+        .arg("shim")
+        .arg(pipe_writer.as_raw_fd().to_string())
+        .spawn()
+        .expect("failed to spawn child");
+    let mut buffer = [0u8; 1];
+    pipe_reader
+        .read(&mut buffer)
+        .expect("failed to read from pipe");
 }
