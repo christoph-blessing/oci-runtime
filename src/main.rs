@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
-use nix::unistd;
+use nix::{
+    fcntl::{FcntlArg, FdFlag},
+    unistd,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -29,7 +32,7 @@ enum Commands {
         container_id: String,
         bundle_path: PathBuf,
     },
-    #[command(hide = true)]
+    #[command(hide = true, name = "__shim")]
     Shim {
         ready_fd: i32,
     },
@@ -47,7 +50,8 @@ fn main() {
         }
         Commands::Shim { ready_fd } => {
             let mut buffer = [0u8; 1];
-            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(*ready_fd) }, &mut buffer);
+            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(*ready_fd) }, &mut buffer)
+                .expect("failed to send shim ready signal");
         }
     }
 }
@@ -93,15 +97,25 @@ fn create(container_id: &String, bundle_path: &PathBuf) {
     let json = serde_json::to_string(&state).expect("failed to serialize state");
     fs::write(container_dir.join("state.json"), json).expect("failed to write state");
 
-    let (mut pipe_reader, pipe_writer) = std::io::pipe().expect("failed to create pipe");
+    run_shim();
+}
+
+fn run_shim() {
+    let (mut recv_shim_ready, send_shim_ready) =
+        std::io::pipe().expect("failed to create shim ready pipe");
+
+    nix::fcntl::fcntl(&send_shim_ready, FcntlArg::F_SETFD(FdFlag::empty()))
+        .expect("failed to remove close-on-exec flag from shim ready pipe");
+
     let program = std::env::current_exe().expect("failed to get current exe");
-    let child = process::Command::new(program)
-        .arg("shim")
-        .arg(pipe_writer.as_raw_fd().to_string())
+    process::Command::new(program)
+        .arg("__shim")
+        .arg(send_shim_ready.as_raw_fd().to_string())
         .spawn()
-        .expect("failed to spawn child");
+        .expect("failed to spawn shim");
+
     let mut buffer = [0u8; 1];
-    pipe_reader
+    recv_shim_ready
         .read(&mut buffer)
-        .expect("failed to read from pipe");
+        .expect("failed to receive shim ready signal");
 }
