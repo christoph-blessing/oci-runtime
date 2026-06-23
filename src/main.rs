@@ -1,3 +1,4 @@
+use clap::{Parser, Subcommand};
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::fd::{BorrowedFd, IntoRawFd};
@@ -332,25 +333,47 @@ fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
         .collect()
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    Legacy {
+        bundle_path: PathBuf,
+    },
+    Create {
+        container_id: String,
+        bundle_path: PathBuf,
+    },
+}
+
 fn main() {
-    let bundle_path = PathBuf::from(
-        std::env::args()
-            .nth(1)
-            .expect("usage: oci-runtime <bundle_path>"),
-    );
-    let config_path = bundle_path.join("config.json");
-    let config_string = fs::read_to_string(config_path).expect("failed to read config");
-    let mut raw_config: RawConfig =
-        serde_json::from_str(&config_string).expect("failed to parse config");
-    raw_config.root.path = bundle_path.join(raw_config.root.path);
+    let cli = Cli::parse();
+    match &cli.command {
+        Commands::Create {
+            container_id,
+            bundle_path,
+        } => {}
+        Commands::Legacy { bundle_path } => {
+            let config_path = bundle_path.join("config.json");
+            let config_string = fs::read_to_string(config_path).expect("failed to read config");
+            let mut raw_config: RawConfig =
+                serde_json::from_str(&config_string).expect("failed to parse config");
+            raw_config.root.path = bundle_path.join(raw_config.root.path);
 
-    let config = match Config::try_from(raw_config) {
-        Ok(config) => config,
-        Err(errors) => {
-            eprintln!("{}", errors);
-            exit(1);
+            let config = match Config::try_from(raw_config) {
+                Ok(config) => config,
+                Err(errors) => {
+                    eprintln!("{}", errors);
+                    exit(1);
+                }
+            };
+
+            start_container(config);
         }
-    };
-
-    start_container(config);
+    }
 }
