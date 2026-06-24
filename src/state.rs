@@ -4,6 +4,7 @@ use std::{collections::HashMap, io, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct State {
     pub oci_version: String,
     pub id: String,
@@ -15,6 +16,7 @@ pub struct State {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Creating,
     Created,
@@ -23,6 +25,7 @@ pub enum Status {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Internal {
     pub start_signal: Option<PathBuf>,
 }
