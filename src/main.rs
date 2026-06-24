@@ -4,17 +4,11 @@ use nix::{
     unistd,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fs,
-    io::Read,
-    os::fd::{AsRawFd, BorrowedFd},
-    path::PathBuf,
-    process,
-};
+use std::{collections::HashMap, fs, io::Read, os::fd::AsRawFd, path::PathBuf, process};
 
 mod config;
 mod legacy;
+mod shim;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -49,9 +43,7 @@ fn main() {
             legacy::main(bundle_path);
         }
         Commands::Shim { ready_fd } => {
-            let mut buffer = [0u8; 1];
-            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(*ready_fd) }, &mut buffer)
-                .expect("failed to send shim ready signal");
+            shim::run(*ready_fd);
         }
     }
 }
