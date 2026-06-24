@@ -68,8 +68,7 @@ fn create(container_id: &String, bundle_path: &PathBuf) {
         bundle_path.to_path_buf(),
         None,
     );
-    let json = serde_json::to_string(&state).expect("failed to serialize state");
-    fs::write(container_dir.join("state.json"), json).expect("failed to write state");
+    state.save().expect("failed to save state");
 
     run_shim();
 }
