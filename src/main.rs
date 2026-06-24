@@ -54,17 +54,6 @@ fn main() {
 }
 
 fn create(container_id: &String, bundle_path: &PathBuf) {
-    let container_dir = PathBuf::from(format!(
-        "/run/user/{}/oci-runtime/{}",
-        unistd::getuid(),
-        container_id
-    ));
-    if container_dir.exists() {
-        eprintln!("provided id is not unique: {}", container_id);
-        process::exit(1);
-    }
-    fs::create_dir_all(&container_dir).expect("failed to create container directory");
-
     State::new(container_id, bundle_path.to_path_buf(), None).expect("failed to create new state");
 
     run_shim(container_id);

@@ -75,7 +75,13 @@ impl State {
     }
 
     pub fn load(id: &str) -> Result<Self, StateError> {
-        let json = fs::read_to_string(state_dir(id).join("state.json"))?;
+        let json = fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                StateError::NotFound(e.to_string())
+            } else {
+                StateError::Io(e)
+            }
+        })?;
         let state: State = serde_json::from_str(json.as_str())?;
         Ok(state)
     }
@@ -109,6 +115,7 @@ impl Creating {
 
 #[derive(Debug)]
 pub enum StateError {
+    NotFound(String),
     Json(serde_json::Error),
     Io(io::Error),
     Transition(String),
