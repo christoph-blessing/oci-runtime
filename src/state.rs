@@ -68,12 +68,8 @@ impl State {
     }
 
     fn save(&self) -> Result<(), StateError> {
-        let id = match self {
-            Self::Creating(s) => s.id.as_str(),
-            Self::Created(s) => s.id.as_str(),
-        };
         let json = serde_json::to_string(self)?;
-        fs::write(state_dir(id).join("state.json"), json)?;
+        fs::write(state_dir(self.id().as_str()).join("state.json"), json)?;
         Ok(())
     }
 
@@ -81,6 +77,13 @@ impl State {
         let json = fs::read_to_string(state_dir(id).join("state.json"))?;
         let state: State = serde_json::from_str(json.as_str())?;
         Ok(state)
+    }
+
+    fn id(&self) -> String {
+        match self {
+            Self::Creating(s) => s.id.to_string(),
+            Self::Created(s) => s.id.to_string(),
+        }
     }
 }
 
