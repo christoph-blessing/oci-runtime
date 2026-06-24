@@ -44,6 +44,12 @@ impl State {
         fs::write(state_dir(self.id.as_str()).join("state.json"), json)?;
         Ok(())
     }
+
+    pub fn load(id: &str) -> Result<Self, StateError> {
+        let json = fs::read_to_string(state_dir(id).join("state.json"))?;
+        let state: State = serde_json::from_str(json.as_str())?;
+        Ok(state)
+    }
 }
 
 #[derive(Debug)]
