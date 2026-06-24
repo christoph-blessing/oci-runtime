@@ -29,6 +29,7 @@ enum Commands {
     },
     #[command(hide = true, name = "__shim")]
     Shim {
+        container_id: String,
         ready_fd: i32,
     },
 }
@@ -43,8 +44,11 @@ fn main() {
         Commands::Legacy { bundle_path } => {
             legacy::main(bundle_path);
         }
-        Commands::Shim { ready_fd } => {
-            shim::run(*ready_fd);
+        Commands::Shim {
+            container_id,
+            ready_fd,
+        } => {
+            shim::run(container_id, *ready_fd);
         }
     }
 }
@@ -70,10 +74,10 @@ fn create(container_id: &String, bundle_path: &PathBuf) {
     );
     state.save().expect("failed to save state");
 
-    run_shim();
+    run_shim(container_id);
 }
 
-fn run_shim() {
+fn run_shim(id: &str) {
     let (mut recv_shim_ready, send_shim_ready) =
         std::io::pipe().expect("failed to create shim ready pipe");
 
@@ -83,6 +87,7 @@ fn run_shim() {
     let program = std::env::current_exe().expect("failed to get current exe");
     process::Command::new(program)
         .arg("__shim")
+        .arg(id)
         .arg(send_shim_ready.as_raw_fd().to_string())
         .spawn()
         .expect("failed to spawn shim");
