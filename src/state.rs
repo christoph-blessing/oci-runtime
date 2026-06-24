@@ -13,7 +13,7 @@ pub enum State {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Creating {
+struct Common {
     pub oci_version: String,
     pub id: String,
     pub bundle: PathBuf,
@@ -21,15 +21,19 @@ pub struct Creating {
     pub annotations: Option<HashMap<String, String>>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Creating {
+    #[serde(flatten)]
+    common: Common,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Created {
-    pub oci_version: String,
-    pub id: String,
+    #[serde(flatten)]
+    common: Common,
     pub pid: i32,
-    pub bundle: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<HashMap<String, String>>,
     pub internal: Internal,
 }
 
@@ -46,10 +50,12 @@ impl State {
         annotations: Option<HashMap<String, String>>,
     ) -> Result<Self, StateError> {
         let state = Self::Creating(Creating {
-            oci_version: String::from("1.3.0"),
-            id: id.to_string(),
-            bundle,
-            annotations,
+            common: Common {
+                oci_version: String::from("1.3.0"),
+                id: id.to_string(),
+                bundle,
+                annotations,
+            },
         });
         fs::create_dir(state_dir(id)?).map_err(|e| {
             if e.kind() == io::ErrorKind::AlreadyExists {
@@ -95,8 +101,8 @@ impl State {
 
     fn id(&self) -> String {
         match self {
-            Self::Creating(s) => s.id.to_string(),
-            Self::Created(s) => s.id.to_string(),
+            Self::Creating(s) => s.common.id.to_string(),
+            Self::Created(s) => s.common.id.to_string(),
         }
     }
 
@@ -108,11 +114,13 @@ impl State {
 impl Creating {
     fn finish_setup(self, pid: i32, start_fifo: &Path) -> Created {
         Created {
-            oci_version: self.oci_version,
-            id: self.id,
+            common: Common {
+                oci_version: self.common.oci_version,
+                id: self.common.id,
+                bundle: self.common.bundle,
+                annotations: self.common.annotations,
+            },
             pid: pid,
-            bundle: self.bundle,
-            annotations: self.annotations,
             internal: Internal {
                 start_signal: start_fifo.to_path_buf(),
             },
