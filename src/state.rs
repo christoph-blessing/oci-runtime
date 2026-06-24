@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -54,7 +55,7 @@ impl State {
         Ok(state)
     }
 
-    pub fn finish_setup(&self, pid: i32, start_fifo: PathBuf) -> Result<Self, StateError> {
+    pub fn finish_setup(&self, pid: i32, start_fifo: &Path) -> Result<Self, StateError> {
         match self {
             Self::Creating(c) => {
                 let new_state = Self::Created(c.clone().finish_setup(pid, start_fifo));
@@ -92,7 +93,7 @@ impl State {
 }
 
 impl Creating {
-    fn finish_setup(self, pid: i32, start_fifo: PathBuf) -> Created {
+    fn finish_setup(self, pid: i32, start_fifo: &Path) -> Created {
         Created {
             oci_version: self.oci_version,
             id: self.id,
@@ -100,7 +101,7 @@ impl Creating {
             bundle: self.bundle,
             annotations: self.annotations,
             internal: Internal {
-                start_signal: start_fifo,
+                start_signal: start_fifo.to_path_buf(),
             },
         }
     }
