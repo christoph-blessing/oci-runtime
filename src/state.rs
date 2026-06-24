@@ -85,6 +85,10 @@ impl State {
             Self::Created(s) => s.id.to_string(),
         }
     }
+
+    pub fn state_dir(&self) -> PathBuf {
+        state_dir(&self.id())
+    }
 }
 
 impl Creating {
