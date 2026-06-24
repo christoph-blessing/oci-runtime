@@ -11,6 +11,7 @@ pub struct State {
     pub pid: Option<i32>,
     pub bundle: PathBuf,
     pub annotations: Option<HashMap<String, String>>,
+    pub internal: Internal,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,6 +22,11 @@ pub enum Status {
     Stopped,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Internal {
+    pub start_signal: Option<PathBuf>,
+}
+
 impl State {
     pub fn new(
         id: String,
@@ -29,6 +35,7 @@ impl State {
         bundle: PathBuf,
         annotations: Option<HashMap<String, String>>,
     ) -> Self {
+        let internal = Internal { start_signal: None };
         Self {
             oci_version: String::from("1.3.0"),
             id,
@@ -36,6 +43,7 @@ impl State {
             pid,
             bundle,
             annotations,
+            internal,
         }
     }
 
