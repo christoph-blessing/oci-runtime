@@ -6,9 +6,9 @@ use std::{
 
 use nix::sys::stat::Mode;
 
-use crate::state::State;
+use crate::state::{State, StateError};
 
-pub fn run(id: &str, ready_fd: i32) {
+pub fn run(id: &str, ready_fd: i32) -> Result<(), StateError> {
     let state = State::load(id).expect("failed to load state in shim");
 
     let start_fifo_path = state
@@ -32,4 +32,5 @@ pub fn run(id: &str, ready_fd: i32) {
         .read_exact(&mut buffer)
         .expect("failed to read start signal");
     fs::remove_file(&start_fifo_path).expect("failed to remove start signal fifo");
+    Ok(())
 }

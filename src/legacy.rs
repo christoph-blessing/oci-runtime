@@ -7,6 +7,7 @@ use std::process::exit;
 use crate::config::raw::Config as RawConfig;
 use crate::config::validated::Config;
 use crate::config::validated::IdMappingConfig;
+use crate::state::StateError;
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
@@ -21,7 +22,7 @@ use nix::unistd::{
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-pub fn main(bundle_path: &PathBuf) {
+pub fn main(bundle_path: &PathBuf) -> Result<(), StateError> {
     let config_path = bundle_path.join("config.json");
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
     let mut raw_config: RawConfig =
@@ -37,6 +38,7 @@ pub fn main(bundle_path: &PathBuf) {
     };
 
     start_container(config);
+    Ok(())
 }
 
 pub fn start_container(config: Config) {

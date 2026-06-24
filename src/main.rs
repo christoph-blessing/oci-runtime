@@ -33,33 +33,34 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
-    match &cli.command {
+    let result = match &cli.command {
         Commands::Create {
             container_id,
             bundle_path,
         } => create(container_id, bundle_path),
-        Commands::Legacy { bundle_path } => {
-            legacy::main(bundle_path);
-        }
+        Commands::Legacy { bundle_path } => legacy::main(bundle_path),
         Commands::Shim {
             container_id,
             ready_fd,
-        } => {
-            shim::run(container_id, *ready_fd);
+        } => shim::run(container_id, *ready_fd),
+    };
+    match result {
+        Err(StateError::AlreadyExists(id)) => {
+            eprintln!("container already exists: {}", id);
+            std::process::exit(1);
         }
+        Err(StateError::NotFound(id)) => {
+            eprintln!("container not found: {}", id);
+            std::process::exit(1);
+        }
+        _ => panic!("failed to execute command"),
     }
 }
 
-fn create(container_id: &String, bundle_path: &PathBuf) {
-    State::new(container_id, bundle_path.to_path_buf(), None).unwrap_or_else(|e| match e {
-        StateError::AlreadyExists(id) => {
-            eprintln!("container already exists: {}", id);
-            std::process::exit(1)
-        }
-        _ => panic!("failed to create new container"),
-    });
-
+fn create(container_id: &String, bundle_path: &PathBuf) -> Result<(), StateError> {
+    State::new(container_id, bundle_path.to_path_buf(), None)?;
     run_shim(container_id);
+    Ok(())
 }
 
 fn run_shim(id: &str) {
