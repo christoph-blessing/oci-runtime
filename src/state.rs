@@ -9,7 +9,7 @@ pub struct State {
     pub status: Status,
     pub pid: Option<i32>,
     pub bundle: PathBuf,
-    pub anntotations: Option<HashMap<String, String>>,
+    pub annotations: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -18,4 +18,23 @@ pub enum Status {
     Created,
     Running,
     Stopped,
+}
+
+impl State {
+    pub fn new(
+        id: String,
+        status: Status,
+        pid: Option<i32>,
+        bundle: PathBuf,
+        annotations: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            oci_version: String::from("1.3.0"),
+            id,
+            status,
+            pid,
+            bundle,
+            annotations,
+        }
+    }
 }

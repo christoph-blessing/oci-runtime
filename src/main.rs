@@ -61,14 +61,13 @@ fn create(container_id: &String, bundle_path: &PathBuf) {
     }
     fs::create_dir_all(&container_dir).expect("failed to create container directory");
 
-    let state = State {
-        oci_version: String::from("1.3.0"),
-        id: container_id.to_string(),
-        status: Status::Creating,
-        pid: None,
-        bundle: bundle_path.to_path_buf(),
-        anntotations: None,
-    };
+    let state = State::new(
+        container_id.to_string(),
+        Status::Creating,
+        None,
+        bundle_path.to_path_buf(),
+        None,
+    );
     let json = serde_json::to_string(&state).expect("failed to serialize state");
     fs::write(container_dir.join("state.json"), json).expect("failed to write state");
 
