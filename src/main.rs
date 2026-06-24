@@ -1,14 +1,15 @@
+use crate::state::{State, Status};
 use clap::{Parser, Subcommand};
 use nix::{
     fcntl::{FcntlArg, FdFlag},
     unistd,
 };
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, io::Read, os::fd::AsRawFd, path::PathBuf, process};
+use std::{fs, io::Read, os::fd::AsRawFd, path::PathBuf, process};
 
 mod config;
 mod legacy;
 mod shim;
+mod state;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -46,24 +47,6 @@ fn main() {
             shim::run(*ready_fd);
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct State {
-    oci_version: String,
-    id: String,
-    status: Status,
-    pid: Option<i32>,
-    bundle: PathBuf,
-    anntotations: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum Status {
-    Creating,
-    Created,
-    Running,
-    Stopped,
 }
 
 fn create(container_id: &String, bundle_path: &PathBuf) {
