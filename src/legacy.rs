@@ -4,10 +4,10 @@ use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::PathBuf;
 use std::process::exit;
 
+use crate::CreateError;
 use crate::config::raw::Config as RawConfig;
 use crate::config::validated::Config;
 use crate::config::validated::IdMappingConfig;
-use crate::state::StateError;
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
 use nix::mount::{MntFlags, MsFlags, mount, umount2};
@@ -22,7 +22,7 @@ use nix::unistd::{
 
 const STACK_SIZE: usize = 1024 * 1024;
 
-pub fn main(bundle_path: &PathBuf) -> Result<(), StateError> {
+pub fn main(bundle_path: &PathBuf) -> Result<(), CreateError> {
     let config_path = bundle_path.join("config.json");
     let config_string = fs::read_to_string(config_path).expect("failed to read config");
     let mut raw_config: RawConfig =
