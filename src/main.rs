@@ -1,4 +1,4 @@
-use crate::state::{State, Status};
+use crate::state::State;
 use clap::{Parser, Subcommand};
 use nix::{
     fcntl::{FcntlArg, FdFlag},
@@ -65,14 +65,7 @@ fn create(container_id: &String, bundle_path: &PathBuf) {
     }
     fs::create_dir_all(&container_dir).expect("failed to create container directory");
 
-    let state = State::new(
-        container_id.to_string(),
-        Status::Creating,
-        None,
-        bundle_path.to_path_buf(),
-        None,
-    );
-    state.save().expect("failed to save state");
+    State::new(container_id, bundle_path.to_path_buf(), None).expect("failed to create new state");
 
     run_shim(container_id);
 }

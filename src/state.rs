@@ -4,55 +4,76 @@ use std::{collections::HashMap, io, path::PathBuf};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum State {
+    Creating(Creating),
+    Created(Created),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct State {
+pub struct Creating {
     pub oci_version: String,
     pub id: String,
-    pub status: Status,
-    pub pid: Option<i32>,
     pub bundle: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Created {
+    pub oci_version: String,
+    pub id: String,
+    pub pid: i32,
+    pub bundle: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<HashMap<String, String>>,
     pub internal: Internal,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Status {
-    Creating,
-    Created,
-    Running,
-    Stopped,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Internal {
-    pub start_signal: Option<PathBuf>,
+    pub start_signal: PathBuf,
 }
 
 impl State {
     pub fn new(
-        id: String,
-        status: Status,
-        pid: Option<i32>,
+        id: &str,
         bundle: PathBuf,
         annotations: Option<HashMap<String, String>>,
-    ) -> Self {
-        let internal = Internal { start_signal: None };
-        Self {
+    ) -> Result<Self, StateError> {
+        let state = Self::Creating(Creating {
             oci_version: String::from("1.3.0"),
-            id,
-            status,
-            pid,
+            id: id.to_string(),
             bundle,
             annotations,
-            internal,
+        });
+        state.save()?;
+        Ok(state)
+    }
+
+    pub fn finish_setup(&self, pid: i32, start_fifo: PathBuf) -> Result<Self, StateError> {
+        match self {
+            Self::Creating(c) => {
+                let new_state = Self::Created(c.clone().finish_setup(pid, start_fifo));
+                new_state.save()?;
+                Ok(new_state)
+            }
+            other => {
+                return Err(format!("cannot finish container setup in state: {:?}", other).into());
+            }
         }
     }
 
-    pub fn save(&self) -> Result<(), StateError> {
+    fn save(&self) -> Result<(), StateError> {
+        let id = match self {
+            Self::Creating(s) => s.id.as_str(),
+            Self::Created(s) => s.id.as_str(),
+        };
         let json = serde_json::to_string(self)?;
-        fs::write(state_dir(self.id.as_str()).join("state.json"), json)?;
+        fs::write(state_dir(id).join("state.json"), json)?;
         Ok(())
     }
 
@@ -63,10 +84,26 @@ impl State {
     }
 }
 
+impl Creating {
+    fn finish_setup(self, pid: i32, start_fifo: PathBuf) -> Created {
+        Created {
+            oci_version: self.oci_version,
+            id: self.id,
+            pid: pid,
+            bundle: self.bundle,
+            annotations: self.annotations,
+            internal: Internal {
+                start_signal: start_fifo,
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum StateError {
     Json(serde_json::Error),
     Io(io::Error),
+    Transition(String),
 }
 
 impl From<serde_json::Error> for StateError {
@@ -78,6 +115,12 @@ impl From<serde_json::Error> for StateError {
 impl From<io::Error> for StateError {
     fn from(value: io::Error) -> Self {
         StateError::Io(value)
+    }
+}
+
+impl From<String> for StateError {
+    fn from(value: String) -> Self {
+        Self::Transition(value)
     }
 }
 
