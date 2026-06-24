@@ -1,10 +1,7 @@
-use crate::state::State;
+use crate::state::{State, StateError};
 use clap::{Parser, Subcommand};
-use nix::{
-    fcntl::{FcntlArg, FdFlag},
-    unistd,
-};
-use std::{fs, io::Read, os::fd::AsRawFd, path::PathBuf, process};
+use nix::fcntl::{FcntlArg, FdFlag};
+use std::{io::Read, os::fd::AsRawFd, path::PathBuf, process};
 
 mod config;
 mod legacy;
@@ -54,7 +51,13 @@ fn main() {
 }
 
 fn create(container_id: &String, bundle_path: &PathBuf) {
-    State::new(container_id, bundle_path.to_path_buf(), None).expect("failed to create new state");
+    State::new(container_id, bundle_path.to_path_buf(), None).unwrap_or_else(|e| match e {
+        StateError::AlreadyExists(id) => {
+            eprintln!("container already exists: {}", id);
+            std::process::exit(1)
+        }
+        _ => panic!("failed to create new container"),
+    });
 
     run_shim(container_id);
 }

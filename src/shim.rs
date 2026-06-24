@@ -11,7 +11,10 @@ use crate::state::State;
 pub fn run(id: &str, ready_fd: i32) {
     let state = State::load(id).expect("failed to load state in shim");
 
-    let start_fifo_path = state.state_dir().join("start.fifo");
+    let start_fifo_path = state
+        .state_dir()
+        .expect("failed to get state dir")
+        .join("start.fifo");
     nix::unistd::mkfifo(&start_fifo_path, Mode::S_IRWXU)
         .expect("failed to create start signal fifo");
 

@@ -51,6 +51,13 @@ impl State {
             bundle,
             annotations,
         });
+        fs::create_dir(state_dir(id)?).map_err(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists {
+                StateError::AlreadyExists(id.to_string())
+            } else {
+                StateError::Io(e)
+            }
+        })?;
         state.save()?;
         Ok(state)
     }
@@ -70,12 +77,12 @@ impl State {
 
     fn save(&self) -> Result<(), StateError> {
         let json = serde_json::to_string(self)?;
-        fs::write(state_dir(self.id().as_str()).join("state.json"), json)?;
+        fs::write(state_dir(self.id().as_str())?.join("state.json"), json)?;
         Ok(())
     }
 
     pub fn load(id: &str) -> Result<Self, StateError> {
-        let json = fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
+        let json = fs::read_to_string(state_dir(id)?.join("state.json")).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 StateError::NotFound(e.to_string())
             } else {
@@ -93,8 +100,8 @@ impl State {
         }
     }
 
-    pub fn state_dir(&self) -> PathBuf {
-        state_dir(&self.id())
+    pub fn state_dir(&self) -> Result<PathBuf, StateError> {
+        Ok(state_dir(&self.id())?)
     }
 }
 
@@ -116,6 +123,7 @@ impl Creating {
 #[derive(Debug)]
 pub enum StateError {
     NotFound(String),
+    AlreadyExists(String),
     Json(serde_json::Error),
     Io(io::Error),
     Transition(String),
@@ -139,10 +147,12 @@ impl From<String> for StateError {
     }
 }
 
-fn state_dir(id: &str) -> PathBuf {
-    PathBuf::from(format!(
+fn state_dir(id: &str) -> Result<PathBuf, StateError> {
+    let runtime_dir = PathBuf::from(format!("/run/user/{}/oci-runtime", nix::unistd::getuid()));
+    fs::create_dir_all(runtime_dir)?;
+    Ok(PathBuf::from(format!(
         "/run/user/{}/oci-runtime/{}",
         nix::unistd::getuid(),
         id
-    ))
+    )))
 }
