@@ -71,7 +71,7 @@ fn finish_setup(id: &str, bundle: &Path) -> Result<PathBuf, ShimError> {
 }
 
 fn create_start_signal_fifo(state: &State) -> Result<PathBuf, ShimError> {
-    let start_fifo_path = state.state_dir()?.join("start.fifo");
+    let start_fifo_path = state.state_dir().join("start.fifo");
     nix::unistd::mkfifo(&start_fifo_path, Mode::S_IRWXU)?;
     Ok(start_fifo_path)
 }
@@ -107,7 +107,7 @@ struct StateGuard {
 impl StateGuard {
     fn new(id: &str) -> Self {
         Self {
-            dir: state_dir(id).unwrap(),
+            dir: state_dir(id),
             confirmed: false,
         }
     }
