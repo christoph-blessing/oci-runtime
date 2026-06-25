@@ -7,10 +7,15 @@ use std::{
 
 use nix::sys::stat::Mode;
 
-use crate::state::{State, StateError};
+use crate::{
+    config::{error::ConfigError, validated::Config},
+    state::{State, StateError},
+};
 
+#[derive(Debug)]
 pub enum ShimError {
     State(StateError),
+    Config(ConfigError),
     Syscall(nix::Error),
     Io(io::Error),
 }
@@ -18,6 +23,12 @@ pub enum ShimError {
 impl From<StateError> for ShimError {
     fn from(value: StateError) -> Self {
         Self::State(value)
+    }
+}
+
+impl From<ConfigError> for ShimError {
+    fn from(value: ConfigError) -> Self {
+        Self::Config(value)
     }
 }
 
@@ -33,10 +44,11 @@ impl From<io::Error> for ShimError {
     }
 }
 
-pub fn run(id: &str, bundle_path: &Path, ready_fd: i32) -> Result<(), ShimError> {
-    let state = State::new(id, bundle_path.to_path_buf(), None)?;
+pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
+    let state = State::new(id, bundle.to_path_buf(), None)?;
     let start_fifo_path = create_start_signal_fifo(&state)?;
-    let pid = clone_container(bundle_path)?;
+    let config = Config::new(bundle)?;
+    let pid = clone_container(&config)?;
     state.finish_setup(pid, start_fifo_path.as_path())?;
     send_ready_signal(ready_fd)?;
     recv_start_signal(&start_fifo_path)?;
@@ -63,8 +75,6 @@ fn recv_start_signal(start_fifo_path: &Path) -> Result<(), ShimError> {
     Ok(())
 }
 
-fn clone_container(bundle_path: &Path) -> Result<i32, ShimError> {
-    let config_path = bundle_path.join("config.json");
-    let config_string = fs::read_to_string(config_path)?;
+fn clone_container(config: &Config) -> Result<i32, ShimError> {
     Ok(42)
 }

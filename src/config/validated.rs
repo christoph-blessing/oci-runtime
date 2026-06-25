@@ -1,4 +1,4 @@
-use super::error::{ValidationError, ValidationErrors};
+use super::error::{ConfigError, ValidationError, ValidationErrors};
 use super::raw;
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
@@ -7,6 +7,8 @@ use nix::sys::resource::Resource;
 use semver::Version;
 use semver::VersionReq;
 use std::fmt::Display;
+use std::fs;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -81,6 +83,23 @@ pub struct IdMappingConfig {
     pub container_id: usize,
     pub host_id: usize,
     pub size: usize,
+}
+
+impl Config {
+    pub fn new(bundle: &Path) -> Result<Self, ConfigError> {
+        let config_path = bundle.join("config.json");
+        let config_string = fs::read_to_string(&config_path).map_err(|e| {
+            if e.kind() == ErrorKind::NotFound {
+                ConfigError::NotFound(config_path)
+            } else {
+                ConfigError::Io(e)
+            }
+        })?;
+        let mut raw_config: raw::Config = serde_json::from_str(&config_string)?;
+        raw_config.root.path = bundle.join(raw_config.root.path);
+        let config = Config::try_from(raw_config)?;
+        Ok(config)
+    }
 }
 
 impl TryFrom<raw::Config> for Config {

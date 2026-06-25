@@ -7,6 +7,7 @@ use std::{
     process::Command,
 };
 
+#[derive(Debug)]
 pub enum CreateError {
     State(StateError),
     Io(io::Error),

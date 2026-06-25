@@ -1,4 +1,4 @@
-use crate::{create::CreateError, shim::ShimError, state::StateError};
+use crate::{config::error::ConfigError, create::CreateError, shim::ShimError, state::StateError};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -32,6 +32,7 @@ enum Commands {
     },
 }
 
+#[derive(Debug)]
 enum CliError {
     Create(CreateError),
     Shim(ShimError),
@@ -64,7 +65,7 @@ fn main() {
         } => shim::run(container_id, bundle_path, *ready_fd).map_err(|e| e.into()),
     };
     match result {
-        Err(CliError::Create(CreateError::State(StateError::AlreadyExists(id)))) => {
+        Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(id)))) => {
             eprintln!("container already exists: {}", id);
             std::process::exit(1);
         }
@@ -72,6 +73,13 @@ fn main() {
             eprintln!("container not found: {}", id);
             std::process::exit(1);
         }
-        _ => panic!("failed to execute command"),
+        Err(CliError::Shim(ShimError::Config(ConfigError::NotFound(path)))) => {
+            eprintln!("config not found: {}", path.display());
+            std::process::exit(1);
+        }
+        _ => {
+            println!("{:?}", result);
+            panic!("failed to execute command")
+        }
     }
 }
