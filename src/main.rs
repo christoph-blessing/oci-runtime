@@ -1,17 +1,9 @@
-use crate::{
-    shim::ShimError,
-    state::{State, StateError},
-};
+use crate::{create::CreateError, shim::ShimError, state::StateError};
 use clap::{Parser, Subcommand};
-use nix::fcntl::{FcntlArg, FdFlag};
-use std::{
-    io::{self, Read},
-    os::fd::AsRawFd,
-    path::PathBuf,
-    process,
-};
+use std::path::PathBuf;
 
 mod config;
+mod create;
 mod legacy;
 mod shim;
 mod state;
@@ -62,7 +54,7 @@ fn main() {
         Commands::Create {
             container_id,
             bundle_path,
-        } => create(container_id, bundle_path).map_err(|e| e.into()),
+        } => create::run(container_id, bundle_path).map_err(|e| e.into()),
         Commands::Legacy { bundle_path } => legacy::main(bundle_path).map_err(|e| e.into()),
         Commands::Shim {
             container_id,
@@ -80,51 +72,4 @@ fn main() {
         }
         _ => panic!("failed to execute command"),
     }
-}
-
-enum CreateError {
-    State(StateError),
-    Io(io::Error),
-    Syscall(nix::Error),
-}
-
-impl From<StateError> for CreateError {
-    fn from(value: StateError) -> Self {
-        Self::State(value)
-    }
-}
-
-impl From<io::Error> for CreateError {
-    fn from(value: io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<nix::Error> for CreateError {
-    fn from(value: nix::Error) -> Self {
-        Self::Syscall(value)
-    }
-}
-
-fn create(container_id: &String, bundle_path: &PathBuf) -> Result<(), CreateError> {
-    State::new(container_id, bundle_path.to_path_buf(), None)?;
-    run_shim(container_id)?;
-    Ok(())
-}
-
-fn run_shim(id: &str) -> Result<(), CreateError> {
-    let (mut recv_shim_ready, send_shim_ready) = std::io::pipe()?;
-
-    nix::fcntl::fcntl(&send_shim_ready, FcntlArg::F_SETFD(FdFlag::empty()))?;
-
-    let program = std::env::current_exe()?;
-    process::Command::new(program)
-        .arg("__shim")
-        .arg(id)
-        .arg(send_shim_ready.as_raw_fd().to_string())
-        .spawn()?;
-
-    let mut buffer = [0u8; 1];
-    recv_shim_ready.read(&mut buffer)?;
-    Ok(())
 }
