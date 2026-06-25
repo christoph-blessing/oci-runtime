@@ -33,8 +33,8 @@ impl From<io::Error> for ShimError {
     }
 }
 
-pub fn run(id: &str, ready_fd: i32) -> Result<(), ShimError> {
-    let state = State::load(id)?;
+pub fn run(id: &str, bundle_path: &Path, ready_fd: i32) -> Result<(), ShimError> {
+    let state = State::new(id, bundle_path.to_path_buf(), None)?;
     let start_fifo_path = create_start_signal_fifo(&state)?;
     state.finish_setup(42, start_fifo_path.as_path())?;
     send_ready_signal(ready_fd)?;

@@ -27,6 +27,7 @@ enum Commands {
     #[command(hide = true, name = "__shim")]
     Shim {
         container_id: String,
+        bundle_path: PathBuf,
         ready_fd: i32,
     },
 }
@@ -58,8 +59,9 @@ fn main() {
         Commands::Legacy { bundle_path } => legacy::main(bundle_path).map_err(|e| e.into()),
         Commands::Shim {
             container_id,
+            bundle_path,
             ready_fd,
-        } => shim::run(container_id, *ready_fd).map_err(|e| e.into()),
+        } => shim::run(container_id, bundle_path, *ready_fd).map_err(|e| e.into()),
     };
     match result {
         Err(CliError::Create(CreateError::State(StateError::AlreadyExists(id)))) => {

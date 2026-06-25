@@ -1,9 +1,9 @@
-use crate::state::{State, StateError};
+use crate::state::StateError;
 use nix::fcntl::{FcntlArg, FdFlag};
 use std::{
     io::{self, Read},
     os::fd::AsRawFd,
-    path::PathBuf,
+    path::Path,
     process::Command,
 };
 
@@ -31,21 +31,15 @@ impl From<nix::Error> for CreateError {
     }
 }
 
-pub fn run(container_id: &String, bundle_path: &PathBuf) -> Result<(), CreateError> {
-    State::new(container_id, bundle_path.to_path_buf(), None)?;
-    run_shim(container_id)?;
-    Ok(())
-}
-
-fn run_shim(id: &str) -> Result<(), CreateError> {
+pub fn run(container_id: &String, bundle_path: &Path) -> Result<(), CreateError> {
     let (mut recv_shim_ready, send_shim_ready) = std::io::pipe()?;
-
     nix::fcntl::fcntl(&send_shim_ready, FcntlArg::F_SETFD(FdFlag::empty()))?;
 
     let program = std::env::current_exe()?;
     Command::new(program)
         .arg("__shim")
-        .arg(id)
+        .arg(container_id)
+        .arg(bundle_path)
         .arg(send_shim_ready.as_raw_fd().to_string())
         .spawn()?;
 
