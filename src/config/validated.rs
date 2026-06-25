@@ -1,15 +1,14 @@
-use std::fmt::Display;
-use std::path::Path;
-use std::path::PathBuf;
-
+use super::error::{ValidationError, ValidationErrors};
 use super::raw;
-use super::raw::NamespaceKind;
 use caps::CapsHashSet;
 use nix::mount::MsFlags;
 use nix::sched::CloneFlags;
 use nix::sys::resource::Resource;
 use semver::Version;
 use semver::VersionReq;
+use std::fmt::Display;
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct Config {
@@ -405,8 +404,6 @@ impl AbsolutePath {
     }
 }
 
-pub struct ValidationErrors(Vec<ValidationError>);
-
 impl Display for ValidationErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut text = String::new();
@@ -414,31 +411,6 @@ impl Display for ValidationErrors {
             text.push_str(format!("    - {}\n", error).as_str());
         }
         write!(f, "config validation failed:\n{}", text)
-    }
-}
-
-#[derive(Debug)]
-pub enum ValidationError {
-    InvalidVersion(String),
-    UnsupportedVersion,
-    PathNotFound(PathBuf),
-    NotADirectory(PathBuf),
-    EmptyArgs,
-    DuplicateNamespace(NamespaceKind),
-}
-
-impl Display for ValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidVersion(e) => write!(f, "ociVersion is invalid: {}", e),
-            Self::UnsupportedVersion => write!(f, "ociVersion is unsupported"),
-            Self::PathNotFound(p) => write!(f, "root.path does not exist: {}", p.display()),
-            Self::NotADirectory(p) => write!(f, "root.path is not a directory: {}", p.display()),
-            Self::EmptyArgs => write!(f, "process.args must contain at least one argument"),
-            Self::DuplicateNamespace(n) => {
-                write!(f, "linux.namespaces contains duplicates: {}", n)
-            }
-        }
     }
 }
 
@@ -456,6 +428,7 @@ fn validate_version(version: String) -> Result<Version, ValidationError> {
 
 #[cfg(test)]
 mod tests {
+    use super::raw::NamespaceKind;
     use tempfile::NamedTempFile;
 
     use super::*;

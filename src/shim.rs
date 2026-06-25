@@ -36,7 +36,8 @@ impl From<io::Error> for ShimError {
 pub fn run(id: &str, bundle_path: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let state = State::new(id, bundle_path.to_path_buf(), None)?;
     let start_fifo_path = create_start_signal_fifo(&state)?;
-    state.finish_setup(42, start_fifo_path.as_path())?;
+    let pid = clone_container(bundle_path)?;
+    state.finish_setup(pid, start_fifo_path.as_path())?;
     send_ready_signal(ready_fd)?;
     recv_start_signal(&start_fifo_path)?;
     Ok(())
@@ -60,4 +61,10 @@ fn recv_start_signal(start_fifo_path: &Path) -> Result<(), ShimError> {
     start_fifo.read_exact(&mut buffer)?;
     fs::remove_file(&start_fifo_path)?;
     Ok(())
+}
+
+fn clone_container(bundle_path: &Path) -> Result<i32, ShimError> {
+    let config_path = bundle_path.join("config.json");
+    let config_string = fs::read_to_string(config_path)?;
+    Ok(42)
 }
