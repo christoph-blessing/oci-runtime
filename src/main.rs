@@ -65,6 +65,7 @@ fn main() {
         } => shim::run(container_id, bundle_path, *ready_fd).map_err(|e| e.into()),
     };
     match result {
+        Ok(_) => std::process::exit(0),
         Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(id)))) => {
             eprintln!("container already exists: {}", id);
             std::process::exit(1);
@@ -77,7 +78,7 @@ fn main() {
             eprintln!("config not found: {}", path.display());
             std::process::exit(1);
         }
-        _ => {
+        Err(_) => {
             println!("{:?}", result);
             panic!("failed to execute command")
         }

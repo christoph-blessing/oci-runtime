@@ -43,6 +43,7 @@ pub fn run(container_id: &String, bundle_path: &Path) -> Result<(), CreateError>
         .arg(bundle_path)
         .arg(send_shim_ready.as_raw_fd().to_string())
         .spawn()?;
+    drop(send_shim_ready);
 
     let mut buffer = [0u8; 1];
     recv_shim_ready.read(&mut buffer)?;
