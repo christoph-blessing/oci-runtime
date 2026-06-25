@@ -12,6 +12,8 @@ pub enum CreateError {
     State(StateError),
     Io(io::Error),
     Syscall(nix::Error),
+    ShimExitedEarly,
+    ShimReportedFailure,
 }
 
 impl From<StateError> for CreateError {
@@ -33,19 +35,27 @@ impl From<nix::Error> for CreateError {
 }
 
 pub fn run(container_id: &String, bundle_path: &Path) -> Result<(), CreateError> {
-    let (mut recv_shim_ready, send_shim_ready) = std::io::pipe()?;
-    nix::fcntl::fcntl(&send_shim_ready, FcntlArg::F_SETFD(FdFlag::empty()))?;
+    let (mut recv_shim_done, send_shim_done) = std::io::pipe()?;
+    nix::fcntl::fcntl(&send_shim_done, FcntlArg::F_SETFD(FdFlag::empty()))?;
 
     let program = std::env::current_exe()?;
     Command::new(program)
         .arg("__shim")
         .arg(container_id)
         .arg(bundle_path)
-        .arg(send_shim_ready.as_raw_fd().to_string())
+        .arg(send_shim_done.as_raw_fd().to_string())
         .spawn()?;
-    drop(send_shim_ready);
+    drop(send_shim_done);
 
     let mut buffer = [0u8; 1];
-    recv_shim_ready.read(&mut buffer)?;
-    Ok(())
+    let n = recv_shim_done.read(&mut buffer)?;
+    if n == 0 {
+        return Err(CreateError::ShimExitedEarly);
+    } else {
+        if buffer[0] == 0 {
+            return Err(CreateError::ShimReportedFailure);
+        } else {
+            Ok(())
+        }
+    }
 }

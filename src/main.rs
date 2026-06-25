@@ -28,7 +28,7 @@ enum Commands {
     Shim {
         container_id: String,
         bundle_path: PathBuf,
-        ready_fd: i32,
+        done_fd: i32,
     },
 }
 
@@ -61,26 +61,32 @@ fn main() {
         Commands::Shim {
             container_id,
             bundle_path,
-            ready_fd,
-        } => shim::run(container_id, bundle_path, *ready_fd).map_err(|e| e.into()),
+            done_fd,
+        } => shim::run(container_id, bundle_path, *done_fd).map_err(|e| e.into()),
     };
     match result {
         Ok(_) => std::process::exit(0),
-        Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(id)))) => {
+        Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(ref id)))) => {
             eprintln!("container already exists: {}", id);
-            std::process::exit(1);
         }
-        Err(CliError::Create(CreateError::State(StateError::NotFound(id)))) => {
+        Err(CliError::Create(CreateError::State(StateError::NotFound(ref id)))) => {
             eprintln!("container not found: {}", id);
-            std::process::exit(1);
         }
-        Err(CliError::Shim(ShimError::Config(ConfigError::NotFound(path)))) => {
+        Err(CliError::Create(CreateError::ShimExitedEarly)) => {
+            eprintln!("shim exited without becoming ready");
+        }
+        Err(CliError::Create(CreateError::ShimReportedFailure)) => {
+            eprintln!("shim reported failure during setup");
+        }
+        Err(CliError::Shim(ShimError::Config(ConfigError::NotFound(ref path)))) => {
             eprintln!("config not found: {}", path.display());
-            std::process::exit(1);
         }
         Err(_) => {
             println!("{:?}", result);
-            panic!("failed to execute command")
         }
+    }
+    match result {
+        Ok(_) => std::process::exit(0),
+        Err(_) => std::process::exit(1),
     }
 }
