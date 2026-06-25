@@ -5,12 +5,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use nix::sys::stat::Mode;
+use nix::{
+    sys::{signal::Signal, stat::Mode, wait::WaitStatus},
+    unistd::Pid,
+};
 
 use crate::{
     config::{error::ConfigError, validated::Config},
     state::{State, StateError, state_dir},
 };
+
+const STACK_SIZE: usize = 1024 * 1024;
 
 #[derive(Debug)]
 pub enum ShimError {
@@ -45,7 +50,7 @@ impl From<io::Error> for ShimError {
 }
 
 pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
-    let start_fifo_path = match finish_setup(id, bundle) {
+    let pid = match finish_setup(id, bundle) {
         Ok(p) => {
             send_done_signal(done_fd, true)?;
             p
@@ -55,19 +60,22 @@ pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
             return Err(e);
         }
     };
-    recv_start_signal(&start_fifo_path)?;
+    match nix::sys::wait::waitpid(pid, None)? {
+        WaitStatus::Exited(_, code) => {}
+        other => panic!("unexpected wait status: {:?}", other),
+    }
     Ok(())
 }
 
-fn finish_setup(id: &str, bundle: &Path) -> Result<PathBuf, ShimError> {
+fn finish_setup(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
     let state = State::new(id, bundle.to_path_buf(), None)?;
     let guard = StateGuard::new(id);
     let start_fifo_path = create_start_signal_fifo(&state)?;
     let config = Config::new(bundle)?;
-    let pid = clone_container(&config)?;
+    let pid = clone_child(&config, start_fifo_path.as_path())?;
     state.finish_setup(pid, start_fifo_path.as_path())?;
     guard.confirm();
-    Ok(start_fifo_path)
+    Ok(pid)
 }
 
 fn create_start_signal_fifo(state: &State) -> Result<PathBuf, ShimError> {
@@ -95,10 +103,6 @@ fn recv_start_signal(start_fifo_path: &Path) -> Result<(), ShimError> {
     Ok(())
 }
 
-fn clone_container(config: &Config) -> Result<i32, ShimError> {
-    Ok(42)
-}
-
 struct StateGuard {
     dir: PathBuf,
     confirmed: bool,
@@ -124,3 +128,27 @@ impl Drop for StateGuard {
         }
     }
 }
+
+fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, ShimError> {
+    let mut stack = vec![0u8; STACK_SIZE];
+    let cb = Box::new(|| match run_child(config, start_fifo_path) {
+        Ok(_) => 0,
+        Err(_) => 1,
+    });
+    let pid = unsafe {
+        nix::sched::clone(
+            cb,
+            &mut stack,
+            config.linux.clone_flags,
+            Some(Signal::SIGCHLD as i32),
+        )
+    }?;
+    Ok(pid)
+}
+
+fn run_child(config: &Config, start_fifo_path: &Path) -> Result<(), ChildError> {
+    Ok(())
+}
+
+#[derive(Debug)]
+enum ChildError {}
