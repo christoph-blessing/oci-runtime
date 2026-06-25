@@ -155,7 +155,7 @@ impl From<String> for StateError {
     }
 }
 
-fn state_dir(id: &str) -> Result<PathBuf, StateError> {
+pub fn state_dir(id: &str) -> Result<PathBuf, StateError> {
     let runtime_dir = PathBuf::from(format!("/run/user/{}/oci-runtime", nix::unistd::getuid()));
     fs::create_dir_all(runtime_dir)?;
     Ok(PathBuf::from(format!(

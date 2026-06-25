@@ -9,7 +9,7 @@ use nix::sys::stat::Mode;
 
 use crate::{
     config::{error::ConfigError, validated::Config},
-    state::{State, StateError},
+    state::{State, StateError, state_dir},
 };
 
 #[derive(Debug)]
@@ -61,10 +61,12 @@ pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
 
 fn finish_setup(id: &str, bundle: &Path) -> Result<PathBuf, ShimError> {
     let state = State::new(id, bundle.to_path_buf(), None)?;
+    let guard = StateGuard::new(id);
     let start_fifo_path = create_start_signal_fifo(&state)?;
     let config = Config::new(bundle)?;
     let pid = clone_container(&config)?;
     state.finish_setup(pid, start_fifo_path.as_path())?;
+    guard.confirm();
     Ok(start_fifo_path)
 }
 
@@ -95,4 +97,30 @@ fn recv_start_signal(start_fifo_path: &Path) -> Result<(), ShimError> {
 
 fn clone_container(config: &Config) -> Result<i32, ShimError> {
     Ok(42)
+}
+
+struct StateGuard {
+    dir: PathBuf,
+    confirmed: bool,
+}
+
+impl StateGuard {
+    fn new(id: &str) -> Self {
+        Self {
+            dir: state_dir(id).unwrap(),
+            confirmed: false,
+        }
+    }
+
+    fn confirm(mut self) {
+        self.confirmed = true;
+    }
+}
+
+impl Drop for StateGuard {
+    fn drop(&mut self) {
+        if !self.confirmed {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
 }
