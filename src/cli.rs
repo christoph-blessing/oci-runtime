@@ -30,6 +30,9 @@ pub fn run() -> Result<(), CliError> {
         Err(CliError::Create(CreateError::ShimReportedFailure)) => {
             eprintln!("shim reported failure during setup");
         }
+        Err(CliError::Create(CreateError::State(StateError::InvalidState { ref state }))) => {
+            eprintln!("cannot create container in state {}", state)
+        }
         Err(CliError::Shim(ShimError::Config(ConfigError::NotFound(ref path)))) => {
             eprintln!("config not found: {}", path.display());
         }

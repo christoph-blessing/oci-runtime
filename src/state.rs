@@ -75,15 +75,17 @@ impl State {
         Ok(state)
     }
 
-    pub fn finish_setup(&self, pid: Pid, start_fifo: &Path) -> Result<Self, StateError> {
+    pub fn finish_setup(self, pid: Pid, start_fifo: &Path) -> Result<Self, StateError> {
         match self {
             Self::Creating(c) => {
-                let new_state = Self::Created(c.clone().finish_setup(pid, start_fifo));
+                let new_state = Self::Created(c.finish_setup(pid, start_fifo));
                 new_state.save()?;
                 Ok(new_state)
             }
             other => {
-                return Err(format!("cannot finish container setup in state: {:?}", other).into());
+                return Err(StateError::InvalidState {
+                    state: other.as_string(),
+                });
             }
         }
     }
@@ -95,7 +97,11 @@ impl State {
                 new_state.save()?;
                 Ok(new_state)
             }
-            other => return Err(format!("cannot start container in state: {:?}", other).into()),
+            other => {
+                return Err(StateError::InvalidState {
+                    state: other.as_string(),
+                });
+            }
         }
     }
 
@@ -127,6 +133,14 @@ impl State {
 
     pub fn state_dir(&self) -> PathBuf {
         state_dir(&self.id())
+    }
+
+    fn as_string(&self) -> String {
+        match self {
+            Self::Creating(_) => String::from("creating"),
+            Self::Created(_) => String::from("created"),
+            Self::Running(_) => String::from("running"),
+        }
     }
 }
 
@@ -167,7 +181,7 @@ pub enum StateError {
     AlreadyExists(String),
     Json(serde_json::Error),
     Io(io::Error),
-    Transition(String),
+    InvalidState { state: String },
 }
 
 impl From<serde_json::Error> for StateError {
@@ -179,12 +193,6 @@ impl From<serde_json::Error> for StateError {
 impl From<io::Error> for StateError {
     fn from(value: io::Error) -> Self {
         StateError::Io(value)
-    }
-}
-
-impl From<String> for StateError {
-    fn from(value: String) -> Self {
-        Self::Transition(value)
     }
 }
 
