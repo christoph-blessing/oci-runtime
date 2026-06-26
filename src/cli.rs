@@ -18,9 +18,6 @@ pub fn run() -> Result<(), CliError> {
     };
     match result {
         Ok(_) => std::process::exit(0),
-        Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(ref id)))) => {
-            eprintln!("container already exists: {}", id);
-        }
         Err(CliError::Create(CreateError::State(StateError::NotFound(ref id)))) => {
             eprintln!("container not found: {}", id);
         }
@@ -35,6 +32,12 @@ pub fn run() -> Result<(), CliError> {
         }
         Err(CliError::Shim(ShimError::Config(ConfigError::NotFound(ref path)))) => {
             eprintln!("config not found: {}", path.display());
+        }
+        Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(ref id)))) => {
+            eprintln!("container already exists: {}", id);
+        }
+        Err(CliError::Shim(ShimError::Config(ConfigError::Parse(ref error)))) => {
+            eprintln!("failed to parse config: {}", error)
         }
         Err(_) => {
             println!("{:?}", result);

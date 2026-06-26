@@ -130,16 +130,13 @@ impl TryFrom<raw::Config> for Config {
             }
         }
 
-        let mut process = None;
-        if let Some(raw_process) = value.process {
-            process = match ProcessConfig::try_from(raw_process) {
-                Ok(process) => Some(process),
-                Err(error) => {
-                    errors.push(error);
-                    None
-                }
-            };
-        }
+        let process = match ProcessConfig::try_from(value.process) {
+            Ok(process) => Some(process),
+            Err(error) => {
+                errors.push(error);
+                None
+            }
+        };
 
         let linux = match LinuxConfig::try_from(value.linux) {
             Ok(linux) => Some(linux),

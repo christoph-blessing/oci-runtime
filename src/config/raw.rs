@@ -10,7 +10,7 @@ pub struct Config {
     pub hostname: Option<String>,
     pub root: RootConfig,
     pub mounts: Option<Vec<MountConfig>>,
-    pub process: Option<ProcessConfig>,
+    pub process: ProcessConfig,
     pub linux: LinuxConfig,
 }
 
