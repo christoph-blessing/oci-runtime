@@ -1,6 +1,5 @@
 use std::{
-    fs::{self, File},
-    io::{self, Read},
+    io,
     os::fd::BorrowedFd,
     path::{Path, PathBuf},
 };
@@ -12,8 +11,12 @@ use nix::{
 
 use crate::{
     config::{error::ConfigError, validated::Config},
-    state::{State, StateError, state_dir},
+    state::{State, StateError},
 };
+
+use child::ChildError;
+
+mod child;
 
 const STACK_SIZE: usize = 1024 * 1024;
 
@@ -85,17 +88,6 @@ fn finish_setup(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
     Ok(pid)
 }
 
-fn send_done_signal(done_fd: i32, is_success: bool) -> Result<(), ShimError> {
-    let mut buf;
-    if is_success {
-        buf = [1u8; 1];
-    } else {
-        buf = [0u8; 1];
-    }
-    nix::unistd::write(unsafe { BorrowedFd::borrow_raw(done_fd) }, &mut buf)?;
-    Ok(())
-}
-
 struct StateGuard {
     dir: PathBuf,
     confirmed: bool,
@@ -104,7 +96,7 @@ struct StateGuard {
 impl StateGuard {
     fn new(id: &str) -> Self {
         Self {
-            dir: state_dir(id),
+            dir: crate::state::state_dir(id),
             confirmed: false,
         }
     }
@@ -117,9 +109,20 @@ impl StateGuard {
 impl Drop for StateGuard {
     fn drop(&mut self) {
         if !self.confirmed {
-            let _ = fs::remove_dir_all(&self.dir);
+            let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
+}
+
+fn send_done_signal(done_fd: i32, is_success: bool) -> Result<(), ShimError> {
+    let mut buf;
+    if is_success {
+        buf = [1u8; 1];
+    } else {
+        buf = [0u8; 1];
+    }
+    nix::unistd::write(unsafe { BorrowedFd::borrow_raw(done_fd) }, &mut buf)?;
+    Ok(())
 }
 
 fn create_start_signal_fifo(state: &State) -> Result<PathBuf, ShimError> {
@@ -130,7 +133,7 @@ fn create_start_signal_fifo(state: &State) -> Result<PathBuf, ShimError> {
 
 fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, ShimError> {
     let mut stack = vec![0u8; STACK_SIZE];
-    let cb = Box::new(|| match run_child(config, start_fifo_path) {
+    let cb = Box::new(|| match child::run(config, start_fifo_path) {
         Ok(_) => 0,
         Err(e) => match e {
             ChildError::Fifo(_) => 4,
@@ -145,37 +148,4 @@ fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, ShimError
         )
     }?;
     Ok(pid)
-}
-
-fn run_child(config: &Config, start_fifo_path: &Path) -> Result<(), ChildError> {
-    recv_start_signal(start_fifo_path)?;
-    Ok(())
-}
-
-#[derive(Debug)]
-enum ChildError {
-    Fifo(FifoError),
-}
-
-impl From<FifoError> for ChildError {
-    fn from(value: FifoError) -> Self {
-        Self::Fifo(value)
-    }
-}
-
-#[derive(Debug)]
-struct FifoError(io::Error);
-
-impl From<io::Error> for FifoError {
-    fn from(value: io::Error) -> Self {
-        Self(value)
-    }
-}
-
-fn recv_start_signal(start_fifo_path: &Path) -> Result<(), FifoError> {
-    let mut start_fifo = File::open(&start_fifo_path)?;
-    let mut buffer = [0u8; 1];
-    start_fifo.read_exact(&mut buffer)?;
-    fs::remove_file(&start_fifo_path)?;
-    Ok(())
 }
