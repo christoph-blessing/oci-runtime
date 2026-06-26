@@ -1,6 +1,6 @@
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::fd::BorrowedFd;
+use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
 
@@ -10,7 +10,7 @@ use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
 
 use crate::config::error::ConfigError;
-use crate::config::validated::Config;
+use crate::config::validated::{Config, IdMappingConfig};
 use crate::shim::child::ChildError;
 
 const STACK_SIZE: usize = 1024 * 1024;
@@ -66,12 +66,12 @@ pub struct Running {
 impl State {
     fn save(&self) -> Result<(), StateError> {
         let json = serde_json::to_string(self)?;
-        fs::write(state_dir(self.id().as_str()).join("state.json"), json)?;
+        std::fs::write(state_dir(self.id().as_str()).join("state.json"), json)?;
         Ok(())
     }
 
     fn load(id: &str) -> Result<Self, StateError> {
-        let json = fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
+        let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 StateError::NotFound(e.to_string())
             } else {
@@ -116,7 +116,7 @@ impl Creating {
         if state_dir(id).exists() {
             return Err(StateError::AlreadyExists(id.to_string()));
         }
-        fs::create_dir_all(state_dir(id))?;
+        std::fs::create_dir_all(state_dir(id))?;
         state.save()?;
         Ok(state)
     }
@@ -184,12 +184,24 @@ impl Creating {
 
     fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, StateError> {
         let mut stack = vec![0u8; STACK_SIZE];
-        let cb = Box::new(|| match crate::shim::child::run(&config, start_fifo_path) {
-            Ok(_) => 0,
-            Err(e) => match e {
-                ChildError::Syscall(_) => 2,
-                ChildError::Io(_) => 3,
-            },
+
+        let (read_mappings_ready, write_mappings_ready) = nix::unistd::pipe()?;
+        let read_mappings_ready_fd = read_mappings_ready.into_raw_fd();
+        let write_mappings_ready_fd = write_mappings_ready.into_raw_fd();
+
+        let cb = Box::new(|| {
+            match crate::shim::child::run(
+                &config,
+                read_mappings_ready_fd,
+                write_mappings_ready_fd,
+                start_fifo_path,
+            ) {
+                Ok(_) => 0,
+                Err(e) => match e {
+                    ChildError::Syscall(_) => 2,
+                    ChildError::Io(_) => 3,
+                },
+            }
         });
         let pid = unsafe {
             nix::sched::clone(
@@ -199,7 +211,41 @@ impl Creating {
                 Some(Signal::SIGCHLD as i32),
             )
         }?;
+
+        nix::unistd::close(read_mappings_ready_fd)?;
+        Self::write_id_mappings(pid, config)?;
+        Self::send_mappings_ready_signal(write_mappings_ready_fd)?;
+
         Ok(pid)
+    }
+
+    fn write_id_mappings(pid: Pid, config: &Config) -> Result<(), StateError> {
+        std::fs::write(
+            format!("/proc/{}/uid_map", pid),
+            Self::create_id_map_contents(&config.linux.uid_mappings),
+        )?;
+
+        std::fs::write(format!("/proc/{}/setgroups", pid), "deny")?;
+        std::fs::write(
+            format!("/proc/{}/gid_map", pid),
+            Self::create_id_map_contents(&config.linux.gid_mappings),
+        )?;
+        Ok(())
+    }
+
+    fn send_mappings_ready_signal(write_fd: i32) -> Result<(), StateError> {
+        let mut buffer = vec![0u8; 1];
+        let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };
+        nix::unistd::write(borrowed, &mut buffer)?;
+        nix::unistd::close(write_fd)?;
+        Ok(())
+    }
+
+    fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
+        mappings
+            .iter()
+            .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
+            .collect()
     }
 
     fn send_done_signal(done_fd: i32, is_success: bool) -> Result<(), StateError> {

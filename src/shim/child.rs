@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::{self, Read},
+    os::fd::BorrowedFd,
     path::Path,
 };
 
@@ -8,7 +9,13 @@ use nix::mount::MsFlags;
 
 use crate::config::validated::Config;
 
-pub fn run(config: &Config, start_fifo_path: &Path) -> Result<(), ChildError> {
+pub fn run(
+    config: &Config,
+    read_mappings_ready_fd: i32,
+    write_mappings_ready_fd: i32,
+    start_fifo_path: &Path,
+) -> Result<(), ChildError> {
+    recv_mappings_ready_signal(read_mappings_ready_fd, write_mappings_ready_fd)?;
     make_mounts_private()?;
     recv_start_signal(start_fifo_path)?;
     Ok(())
@@ -30,6 +37,15 @@ impl From<nix::Error> for ChildError {
     fn from(value: nix::Error) -> Self {
         Self::Syscall(value)
     }
+}
+
+fn recv_mappings_ready_signal(read_fd: i32, write_fd: i32) -> Result<(), ChildError> {
+    nix::unistd::close(write_fd)?;
+    let mut buffer = vec![0u8; 1];
+    let borrowed = unsafe { BorrowedFd::borrow_raw(read_fd) };
+    nix::unistd::read(borrowed, &mut buffer)?;
+    nix::unistd::close(read_fd)?;
+    Ok(())
 }
 
 fn make_mounts_private() -> Result<(), nix::Error> {
