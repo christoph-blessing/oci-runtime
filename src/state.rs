@@ -140,7 +140,7 @@ impl Creating {
     }
 
     pub fn finish_setup(self, done_fd: i32) -> Result<Created, StateError> {
-        let created = match self.foo() {
+        let created = match self.setup_child() {
             Ok(p) => {
                 Self::send_done_signal(done_fd, true)?;
                 p
@@ -153,7 +153,7 @@ impl Creating {
         Ok(created)
     }
 
-    fn foo(self) -> Result<Created, StateError> {
+    fn setup_child(self) -> Result<Created, StateError> {
         let guard = StateGuard::new(&self.common.id);
         let start_fifo_path = self.create_start_signal_fifo()?;
         let config = Config::new(self.common.bundle.as_path())?;
