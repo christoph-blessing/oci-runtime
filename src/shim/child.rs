@@ -35,6 +35,5 @@ fn recv_start_signal(start_fifo_path: &Path) -> Result<(), FifoError> {
     let mut start_fifo = File::open(&start_fifo_path)?;
     let mut buffer = [0u8; 1];
     start_fifo.read_exact(&mut buffer)?;
-    std::fs::remove_file(&start_fifo_path)?;
     Ok(())
 }

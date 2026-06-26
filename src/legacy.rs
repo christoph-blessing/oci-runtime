@@ -4,10 +4,10 @@ use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::PathBuf;
 use std::process::exit;
 
-use crate::CreateError;
 use crate::config::raw::Config as RawConfig;
 use crate::config::validated::Config;
 use crate::config::validated::IdMappingConfig;
+use crate::create::CreateError;
 use caps::errors::CapsError;
 use caps::{CapSet, CapsHashSet};
 use nix::mount::{MntFlags, MsFlags, mount, umount2};

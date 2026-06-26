@@ -1,4 +1,7 @@
-use crate::{config::error::ConfigError, create::CreateError, shim::ShimError, state::StateError};
+use crate::{
+    config::error::ConfigError, create::CreateError, shim::ShimError, start::StartError,
+    state::StateError,
+};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -9,6 +12,7 @@ pub fn run() -> Result<(), CliError> {
             container_id,
             bundle_path,
         } => crate::create::run(container_id, bundle_path).map_err(|e| e.into()),
+        Commands::Start { container_id } => crate::start::run(container_id).map_err(|e| e.into()),
         Commands::Legacy { bundle_path } => crate::legacy::main(bundle_path).map_err(|e| e.into()),
         Commands::Shim {
             container_id,
@@ -18,6 +22,7 @@ pub fn run() -> Result<(), CliError> {
     };
     match result {
         Ok(_) => std::process::exit(0),
+
         Err(CliError::Create(CreateError::State(StateError::NotFound(ref id)))) => {
             eprintln!("container not found: {}", id);
         }
@@ -30,6 +35,14 @@ pub fn run() -> Result<(), CliError> {
         Err(CliError::Create(CreateError::State(StateError::InvalidState { ref state }))) => {
             eprintln!("cannot create container in state {}", state)
         }
+
+        Err(CliError::Start(StartError::State(StateError::NotFound(ref id)))) => {
+            eprintln!("container not found: {}", id);
+        }
+        Err(CliError::Start(StartError::State(StateError::InvalidState { ref state }))) => {
+            eprintln!("cannot start container in state {}", state)
+        }
+
         Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::NotFound(
             ref path,
         ))))) => {
@@ -66,6 +79,9 @@ enum Commands {
         container_id: String,
         bundle_path: PathBuf,
     },
+    Start {
+        container_id: String,
+    },
     #[command(hide = true, name = "__shim")]
     Shim {
         container_id: String,
@@ -77,12 +93,19 @@ enum Commands {
 #[derive(Debug)]
 pub enum CliError {
     Create(CreateError),
+    Start(StartError),
     Shim(ShimError),
 }
 
 impl From<CreateError> for CliError {
     fn from(value: CreateError) -> Self {
         Self::Create(value)
+    }
+}
+
+impl From<StartError> for CliError {
+    fn from(value: StartError) -> Self {
+        CliError::Start(value)
     }
 }
 
