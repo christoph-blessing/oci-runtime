@@ -30,13 +30,17 @@ pub fn run() -> Result<(), CliError> {
         Err(CliError::Create(CreateError::State(StateError::InvalidState { ref state }))) => {
             eprintln!("cannot create container in state {}", state)
         }
-        Err(CliError::Shim(ShimError::Config(ConfigError::NotFound(ref path)))) => {
+        Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::NotFound(
+            ref path,
+        ))))) => {
             eprintln!("config not found: {}", path.display());
         }
         Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(ref id)))) => {
             eprintln!("container already exists: {}", id);
         }
-        Err(CliError::Shim(ShimError::Config(ConfigError::Parse(ref error)))) => {
+        Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::Parse(
+            ref error,
+        ))))) => {
             eprintln!("failed to parse config: {}", error)
         }
         Err(_) => {
