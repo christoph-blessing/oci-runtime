@@ -18,7 +18,7 @@ pub struct Config {
     pub hostname: Option<String>,
     pub root: RootConfig,
     pub mounts: Vec<MountConfig>,
-    pub process: Option<ProcessConfig>,
+    pub process: ProcessConfig,
     pub linux: LinuxConfig,
 }
 
@@ -155,7 +155,7 @@ impl TryFrom<raw::Config> for Config {
             hostname: value.hostname,
             root: root.unwrap(),
             mounts,
-            process,
+            process: process.unwrap(),
             linux: linux.unwrap(),
         })
     }

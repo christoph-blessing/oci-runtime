@@ -204,106 +204,105 @@ pub fn start_container(config: Config) {
             });
         }
 
-        if let Some(process) = &config.process {
-            // Change current working directory
-            chdir(process.cwd.as_path()).unwrap_or_else(|e| {
-                panic!(
-                    "failed to chdir to {}: {}",
-                    process.cwd.as_path().display(),
-                    e
-                )
-            });
+        // Change current working directory
+        chdir(config.process.cwd.as_path()).unwrap_or_else(|e| {
+            panic!(
+                "failed to chdir to {}: {}",
+                config.process.cwd.as_path().display(),
+                e
+            )
+        });
 
-            // Create envp and get PATH environment variable
-            let maybe_path_env = process
-                .env
-                .iter()
-                .find(|&s| s.starts_with("PATH="))
-                .map(|s| &s[5..]);
-            let env_c: Vec<CString> = process
-                .env
-                .iter()
+        // Create envp and get PATH environment variable
+        let maybe_path_env = config
+            .process
+            .env
+            .iter()
+            .find(|&s| s.starts_with("PATH="))
+            .map(|s| &s[5..]);
+        let env_c: Vec<CString> = config
+            .process
+            .env
+            .iter()
+            .map(|s| {
+                CString::new(s.as_str())
+                    .unwrap_or_else(|e| panic!("failed to create C string from {}: {}", s, e))
+            })
+            .collect();
+        let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
+
+        // Create argv and try to resolve absolute path to executable
+        let mut args = config.process.args.clone();
+        if let Some(path_env) = maybe_path_env {
+            if let Some(absolute_file) = path_env
+                .split(":")
                 .map(|s| {
-                    CString::new(s.as_str())
-                        .unwrap_or_else(|e| panic!("failed to create C string from {}: {}", s, e))
+                    let mut p = PathBuf::from(s);
+                    p.push(&args[0]);
+                    p
                 })
-                .collect();
-            let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
-
-            // Create argv and try to resolve absolute path to executable
-            let mut args = process.args.clone();
-            if let Some(path_env) = maybe_path_env {
-                if let Some(absolute_file) = path_env
-                    .split(":")
-                    .map(|s| {
-                        let mut p = PathBuf::from(s);
-                        p.push(&args[0]);
-                        p
-                    })
-                    .find(|p| p.exists())
-                {
-                    args[0] = absolute_file
-                        .to_str()
-                        .expect("failed to convert path to string")
-                        .to_owned();
-                }
+                .find(|p| p.exists())
+            {
+                args[0] = absolute_file
+                    .to_str()
+                    .expect("failed to convert path to string")
+                    .to_owned();
             }
-            let args_c: Vec<CString> = args
-                .iter()
-                .map(|a| {
-                    CString::new(a.as_str())
-                        .unwrap_or_else(|e| panic!("failed to create C string from {}: {}", a, e))
-                })
-                .collect();
-            let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
-
-            // Set user and group ids
-            setgid(Gid::from_raw(process.user.gid)).expect("failed to setgid");
-            setuid(Uid::from_raw(process.user.uid)).expect("failed to setuid");
-
-            // Set resource limits
-            for rlimit in &process.rlimits {
-                setrlimit(rlimit.resource, rlimit.soft, rlimit.hard).unwrap_or_else(|e| {
-                    panic!("failed to set rlimit {:?}: {}", rlimit.resource, e)
-                });
-            }
-
-            // Set capabilities
-            let existing_bounding =
-                caps::read(None, CapSet::Bounding).expect("failed to read bounding capabilities");
-            let new_bounding = &process.capabilities.bounding;
-            for capability in existing_bounding.difference(&new_bounding) {
-                caps::drop(None, CapSet::Bounding, *capability).unwrap_or_else(|e| {
-                    panic!("failed to drop bounding capability {}: {}", capability, e)
-                });
-            }
-
-            for cset in [
-                CapSet::Inheritable,
-                CapSet::Effective,
-                CapSet::Permitted,
-                CapSet::Ambient,
-            ] {
-                let capabilities = match cset {
-                    CapSet::Ambient => &process.capabilities.ambient,
-                    CapSet::Bounding => &process.capabilities.bounding,
-                    CapSet::Effective => &process.capabilities.effective,
-                    CapSet::Inheritable => &process.capabilities.inheritable,
-                    CapSet::Permitted => &process.capabilities.permitted,
-                };
-                set_capabilities(cset, capabilities)
-                    .unwrap_or_else(|e| panic!("failed to set cap set {:?}: {}", cset, e));
-            }
-
-            // Prevent process from getting new privileges
-            if process.no_new_privileges {
-                set_no_new_privs().expect("failed to set no_new_privs");
-            }
-
-            // Replace current process
-            execve(argv[0], argv.as_slice(), envp.as_slice())
-                .expect("failed to replace current process");
         }
+        let args_c: Vec<CString> = args
+            .iter()
+            .map(|a| {
+                CString::new(a.as_str())
+                    .unwrap_or_else(|e| panic!("failed to create C string from {}: {}", a, e))
+            })
+            .collect();
+        let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
+
+        // Set user and group ids
+        setgid(Gid::from_raw(config.process.user.gid)).expect("failed to setgid");
+        setuid(Uid::from_raw(config.process.user.uid)).expect("failed to setuid");
+
+        // Set resource limits
+        for rlimit in &config.process.rlimits {
+            setrlimit(rlimit.resource, rlimit.soft, rlimit.hard)
+                .unwrap_or_else(|e| panic!("failed to set rlimit {:?}: {}", rlimit.resource, e));
+        }
+
+        // Set capabilities
+        let existing_bounding =
+            caps::read(None, CapSet::Bounding).expect("failed to read bounding capabilities");
+        let new_bounding = &config.process.capabilities.bounding;
+        for capability in existing_bounding.difference(&new_bounding) {
+            caps::drop(None, CapSet::Bounding, *capability).unwrap_or_else(|e| {
+                panic!("failed to drop bounding capability {}: {}", capability, e)
+            });
+        }
+
+        for cset in [
+            CapSet::Inheritable,
+            CapSet::Effective,
+            CapSet::Permitted,
+            CapSet::Ambient,
+        ] {
+            let capabilities = match cset {
+                CapSet::Ambient => &config.process.capabilities.ambient,
+                CapSet::Bounding => &config.process.capabilities.bounding,
+                CapSet::Effective => &config.process.capabilities.effective,
+                CapSet::Inheritable => &config.process.capabilities.inheritable,
+                CapSet::Permitted => &config.process.capabilities.permitted,
+            };
+            set_capabilities(cset, capabilities)
+                .unwrap_or_else(|e| panic!("failed to set cap set {:?}: {}", cset, e));
+        }
+
+        // Prevent process from getting new privileges
+        if config.process.no_new_privileges {
+            set_no_new_privs().expect("failed to set no_new_privs");
+        }
+
+        // Replace current process
+        execve(argv[0], argv.as_slice(), envp.as_slice())
+            .expect("failed to replace current process");
         0
     });
 
