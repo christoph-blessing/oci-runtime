@@ -8,14 +8,14 @@ pub mod child;
 
 const EXIT_OK: i32 = 0;
 const EXIT_SYSCALL: i32 = 2;
-const EXIT_FIFO: i32 = 4;
+const EXIT_IO: i32 = 3;
 
 #[derive(Debug)]
 pub enum ShimError {
     State(StateError),
     Syscall(nix::Error),
     ChildSyscall,
-    ChildFifo,
+    ChildIo,
 }
 
 impl From<StateError> for ShimError {
@@ -38,7 +38,7 @@ pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
         WaitStatus::Exited(_, code) => match code {
             EXIT_OK => Ok(()),
             EXIT_SYSCALL => Err(ShimError::ChildSyscall),
-            EXIT_FIFO => Err(ShimError::ChildFifo),
+            EXIT_IO => Err(ShimError::ChildIo),
             other => panic!("unexpected exit code: {}", other),
         },
         other => panic!("unexpected wait status: {:?}", other),
