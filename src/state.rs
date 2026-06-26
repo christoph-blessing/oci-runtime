@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub enum State {
     Creating(Creating),
     Created(Created),
+    Running(Running),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -35,13 +36,21 @@ pub struct Created {
     #[serde(flatten)]
     common: Common,
     pub pid: i32,
-    pub internal: Internal,
+    pub internal: CreatedInternal,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Internal {
+pub struct CreatedInternal {
     pub start_signal: PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Running {
+    #[serde(flatten)]
+    common: Common,
+    pub pid: i32,
 }
 
 impl State {
@@ -79,6 +88,17 @@ impl State {
         }
     }
 
+    pub fn start(self) -> Result<Self, StateError> {
+        match self {
+            Self::Created(c) => {
+                let new_state = Self::Running(c.start());
+                new_state.save()?;
+                Ok(new_state)
+            }
+            other => return Err(format!("cannot start container in state: {:?}", other).into()),
+        }
+    }
+
     fn save(&self) -> Result<(), StateError> {
         let json = serde_json::to_string(self)?;
         fs::write(state_dir(self.id().as_str()).join("state.json"), json)?;
@@ -101,6 +121,7 @@ impl State {
         match self {
             Self::Creating(s) => s.common.id.to_string(),
             Self::Created(s) => s.common.id.to_string(),
+            Self::Running(s) => s.common.id.to_string(),
         }
     }
 
@@ -119,9 +140,23 @@ impl Creating {
                 annotations: self.common.annotations,
             },
             pid: pid.as_raw(),
-            internal: Internal {
+            internal: CreatedInternal {
                 start_signal: start_fifo.to_path_buf(),
             },
+        }
+    }
+}
+
+impl Created {
+    fn start(self) -> Running {
+        Running {
+            common: Common {
+                oci_version: self.common.oci_version,
+                id: self.common.id,
+                bundle: self.common.bundle,
+                annotations: self.common.annotations,
+            },
+            pid: self.pid,
         }
     }
 }
