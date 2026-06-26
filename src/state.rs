@@ -187,6 +187,7 @@ impl Creating {
         let cb = Box::new(|| match crate::shim::child::run(&config, start_fifo_path) {
             Ok(_) => 0,
             Err(e) => match e {
+                ChildError::Syscall(_) => 2,
                 ChildError::Fifo(_) => 4,
             },
         });
