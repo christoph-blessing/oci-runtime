@@ -1,11 +1,16 @@
 use std::{
+    ffi::{CStr, CString, NulError},
     fs::File,
     io::{self, Read},
     os::fd::BorrowedFd,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
-use nix::mount::{MntFlags, MsFlags};
+use caps::{CapSet, errors::CapsError};
+use nix::{
+    mount::{MntFlags, MsFlags},
+    unistd::{Gid, Uid},
+};
 
 use crate::config::validated::{AbsolutePath, Config, MountConfig, RootConfig};
 
@@ -27,7 +32,55 @@ pub fn run(
     }
     apply_masked_paths(&config.linux.masked_paths)?;
     apply_readonly_paths(&config.linux.readonly_paths)?;
+
+    // Change current working directory
+    nix::unistd::chdir(config.process.cwd.as_path())?;
+    let env_c: Vec<CString> = config
+        .process
+        .env
+        .iter()
+        .map(|s| CString::new(s.as_str()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
+
+    // Create argv and try to resolve absolute path to executable
+    let maybe_path_env = config
+        .process
+        .env
+        .iter()
+        .find(|&s| s.starts_with("PATH="))
+        .map(|s| &s[5..]);
+    let mut args = config.process.args.clone();
+    if let Some(path_env) = maybe_path_env {
+        if let Some(absolute_file) = path_env
+            .split(":")
+            .map(|s| {
+                let mut p = PathBuf::from(s);
+                p.push(&args[0]);
+                p
+            })
+            .find(|p| p.exists())
+        {
+            args[0] = absolute_file.to_string_lossy().into_owned();
+        }
+    }
+    let args_c: Vec<CString> = args
+        .iter()
+        .map(|a| CString::new(a.as_str()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
+
+    nix::unistd::setgid(Gid::from_raw(config.process.user.gid))?;
+    nix::unistd::setuid(Uid::from_raw(config.process.user.uid))?;
+    for rlimit in &config.process.rlimits {
+        nix::sys::resource::setrlimit(rlimit.resource, rlimit.soft, rlimit.hard)?;
+    }
+    apply_capabilities(config)?;
+    if config.process.no_new_privileges {
+        nix::sys::prctl::set_no_new_privs()?;
+    }
     recv_start_signal(start_fifo)?;
+    nix::unistd::execve(argv[0], argv.as_slice(), envp.as_slice())?;
     Ok(())
 }
 
@@ -35,6 +88,8 @@ pub fn run(
 pub enum ChildError {
     Io(io::Error),
     Syscall(nix::Error),
+    NulByte(NulError),
+    Capabilities(CapsError),
 }
 
 impl From<io::Error> for ChildError {
@@ -46,6 +101,18 @@ impl From<io::Error> for ChildError {
 impl From<nix::Error> for ChildError {
     fn from(value: nix::Error) -> Self {
         Self::Syscall(value)
+    }
+}
+
+impl From<NulError> for ChildError {
+    fn from(value: NulError) -> Self {
+        Self::NulByte(value)
+    }
+}
+
+impl From<CapsError> for ChildError {
+    fn from(value: CapsError) -> Self {
+        Self::Capabilities(value)
     }
 }
 
@@ -195,6 +262,31 @@ fn apply_readonly_paths(readonly_paths: &Vec<AbsolutePath>) -> Result<(), ChildE
             MsFlags::MS_REMOUNT | MsFlags::MS_RDONLY,
             None::<&str>,
         )?;
+    }
+    Ok(())
+}
+
+fn apply_capabilities(config: &Config) -> Result<(), ChildError> {
+    let existing_bounding = caps::read(None, CapSet::Bounding)?;
+    let new_bounding = &config.process.capabilities.bounding;
+    for capability in existing_bounding.difference(&new_bounding) {
+        caps::drop(None, CapSet::Bounding, *capability)?;
+    }
+
+    for cset in [
+        CapSet::Inheritable,
+        CapSet::Effective,
+        CapSet::Permitted,
+        CapSet::Ambient,
+    ] {
+        let capabilities = match cset {
+            CapSet::Ambient => &config.process.capabilities.ambient,
+            CapSet::Bounding => &config.process.capabilities.bounding,
+            CapSet::Effective => &config.process.capabilities.effective,
+            CapSet::Inheritable => &config.process.capabilities.inheritable,
+            CapSet::Permitted => &config.process.capabilities.permitted,
+        };
+        caps::set(None, cset, capabilities)?;
     }
     Ok(())
 }

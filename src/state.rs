@@ -199,10 +199,9 @@ impl Creating {
                 Ok(_) => 0,
                 Err(e) => match e {
                     ChildError::Syscall(_) => 2,
-                    ChildError::Io(e) => {
-                        println!("{}", e);
-                        3
-                    }
+                    ChildError::Io(_) => 3,
+                    ChildError::NulByte(_) => 4,
+                    ChildError::Capabilities(_) => 5,
                 },
             }
         });
