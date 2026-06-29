@@ -53,7 +53,30 @@ fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
     let guard = StateGuard::new(id);
     let start_fifo_path = create_start_signal_fifo(id)?;
     let config = Config::new(bundle)?;
-    let pid = clone_child(&config, &start_fifo_path)?;
+
+    let (read_child_ready, write_child_ready) = nix::unistd::pipe()?;
+    let read_child_ready_fd = read_child_ready.into_raw_fd();
+    let write_child_ready_fd = write_child_ready.into_raw_fd();
+
+    let pid = clone_child(
+        &config,
+        read_child_ready_fd,
+        write_child_ready_fd,
+        &start_fifo_path,
+    )?;
+
+    nix::unistd::close(write_child_ready_fd)?;
+    let borrowed = unsafe { BorrowedFd::borrow_raw(read_child_ready_fd) };
+    let mut buf = [0u8; 1];
+    let n = nix::unistd::read(borrowed, &mut buf)?;
+    if n == 0 {
+        return Err(ShimError::ChildExitedEarly);
+    } else {
+        if buf[0] == 0 {
+            return Err(ShimError::ChildReportedFailure);
+        }
+    }
+
     creating.finish_setup(pid.as_raw(), &start_fifo_path)?;
     guard.confirm();
     Ok(pid)
@@ -65,7 +88,12 @@ fn create_start_signal_fifo(id: &str) -> Result<PathBuf, ShimError> {
     Ok(start_fifo_path)
 }
 
-fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, ShimError> {
+fn clone_child(
+    config: &Config,
+    read_fd: i32,
+    write_fd: i32,
+    start_fifo_path: &Path,
+) -> Result<Pid, ShimError> {
     let mut stack = vec![0u8; STACK_SIZE];
 
     let (read_mappings_ready, write_mappings_ready) = nix::unistd::pipe()?;
@@ -77,6 +105,8 @@ fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, ShimError
             &config,
             read_mappings_ready_fd,
             write_mappings_ready_fd,
+            read_fd,
+            write_fd,
             start_fifo_path,
         ) {
             Ok(_) => 0,
@@ -154,6 +184,8 @@ pub enum ShimError {
     Config(ConfigError),
     Syscall(nix::Error),
     Io(io::Error),
+    ChildReportedFailure,
+    ChildExitedEarly,
     ChildSyscall,
     ChildIo,
 }

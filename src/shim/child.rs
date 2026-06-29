@@ -18,8 +18,56 @@ pub fn run(
     config: &Config,
     read_mappings_ready_fd: i32,
     write_mappings_ready_fd: i32,
+    read_child_ready_fd: i32,
+    write_child_ready_fd: i32,
     start_fifo_path: &Path,
 ) -> Result<(), ChildError> {
+    let (start_fifo, args_c, env_c) = match set_up_child(
+        config,
+        read_mappings_ready_fd,
+        write_mappings_ready_fd,
+        start_fifo_path,
+    ) {
+        Ok(t) => {
+            send_child_ready_signal(read_child_ready_fd, write_child_ready_fd, true)?;
+            t
+        }
+        Err(e) => {
+            send_child_ready_signal(read_child_ready_fd, write_child_ready_fd, false)?;
+            return Err(e);
+        }
+    };
+    recv_start_signal(start_fifo)?;
+    let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
+    let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
+    nix::unistd::execve(argv[0], argv.as_slice(), envp.as_slice())?;
+    Ok(())
+}
+
+fn send_child_ready_signal(
+    read_fd: i32,
+    write_fd: i32,
+    is_success: bool,
+) -> Result<(), ChildError> {
+    nix::unistd::close(read_fd)?;
+    let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };
+    let mut buf;
+    if is_success {
+        buf = [1u8; 1];
+    } else {
+        buf = [0u8; 1];
+    }
+    nix::unistd::write(borrowed, &mut buf)?;
+    nix::unistd::close(write_fd)?;
+    Ok(())
+}
+
+fn set_up_child(
+    config: &Config,
+    read_mappings_ready_fd: i32,
+    write_mappings_ready_fd: i32,
+    start_fifo_path: &Path,
+) -> Result<(File, Vec<CString>, Vec<CString>), ChildError> {
     recv_mappings_ready_signal(read_mappings_ready_fd, write_mappings_ready_fd)?;
     make_mounts_private()?;
     let start_fifo = open_start_signal_fifo(start_fifo_path)?;
@@ -41,7 +89,6 @@ pub fn run(
         .iter()
         .map(|s| CString::new(s.as_str()))
         .collect::<Result<Vec<_>, _>>()?;
-    let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
 
     let executable = match resolve_executable(&config.process.env, &config.process.executable) {
         Some(e) => e,
@@ -56,7 +103,6 @@ pub fn run(
         .iter()
         .map(|a| CString::new(a.as_str()))
         .collect::<Result<Vec<_>, _>>()?;
-    let argv: Vec<&CStr> = args_c.iter().map(|a| a.as_c_str()).collect();
 
     nix::unistd::setgid(Gid::from_raw(config.process.user.gid))?;
     nix::unistd::setuid(Uid::from_raw(config.process.user.uid))?;
@@ -67,9 +113,7 @@ pub fn run(
     if config.process.no_new_privileges {
         nix::sys::prctl::set_no_new_privs()?;
     }
-    recv_start_signal(start_fifo)?;
-    nix::unistd::execve(argv[0], argv.as_slice(), envp.as_slice())?;
-    Ok(())
+    Ok((start_fifo, args_c, env_c))
 }
 
 #[derive(Debug)]
