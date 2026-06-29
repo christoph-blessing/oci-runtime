@@ -1,5 +1,3 @@
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
 
@@ -165,8 +163,6 @@ impl Created {
     }
 
     pub fn start(self) -> Result<Running, StateError> {
-        self.send_start_signal()?;
-
         let state = Running {
             common: Common {
                 oci_version: self.common.oci_version,
@@ -178,16 +174,6 @@ impl Created {
         };
         state.save()?;
         Ok(state)
-    }
-
-    fn send_start_signal(&self) -> Result<(), StateError> {
-        let mut start_fifo = OpenOptions::new()
-            .write(true)
-            .open(&self.internal.start_signal)?;
-        let mut buffer = [0u8; 1];
-        start_fifo.write(&mut buffer)?;
-        std::fs::remove_file(&self.internal.start_signal)?;
-        Ok(())
     }
 }
 
