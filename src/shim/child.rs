@@ -1,6 +1,6 @@
 use std::{
     ffi::{CStr, CString, NulError},
-    fs::File,
+    fs::{File, OpenOptions},
     io::{self, Read},
     os::fd::BorrowedFd,
     path::{Path, PathBuf},
@@ -115,7 +115,15 @@ fn recv_mappings_ready_signal(read_fd: i32, write_fd: i32) -> Result<(), ChildEr
 }
 
 fn open_start_signal_fifo(start_fifo_path: &Path) -> Result<File, ChildError> {
-    Ok(File::open(&start_fifo_path)?)
+    // Open the FIFO with both read and write to avoid blocking. Opening read-only
+    // would block until a writer connects, but we need to open before pivot_root
+    // since the FIFO won't be reachable from the container's filesystem view after
+    // the pivot. Opening read-write returns immediately, then the subsequent read
+    // blocks waiting for the start signal — which is what we want.
+    Ok(OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(start_fifo_path)?)
 }
 
 fn make_mounts_private() -> Result<(), nix::Error> {
@@ -129,7 +137,7 @@ fn make_mounts_private() -> Result<(), nix::Error> {
     Ok(())
 }
 
-fn pivot_root(root_config: &RootConfig, mounts: &Vec<MountConfig>) -> Result<(), ChildError> {
+fn pivot_root(root_config: &RootConfig, mounts: &[MountConfig]) -> Result<(), ChildError> {
     let root_path = root_config.path.as_path();
     let old_root = root_path.join("old_root");
     let old_root_after_pivot = "/old_root";
