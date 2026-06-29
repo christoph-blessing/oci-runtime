@@ -40,6 +40,7 @@ pub struct MountConfig {
 pub struct ProcessConfig {
     pub cwd: AbsolutePath,
     pub env: Vec<String>,
+    pub executable: String,
     pub args: Vec<String>,
     pub user: UserConfig,
     pub capabilities: CapabilitiesConfig,
@@ -235,9 +236,12 @@ impl From<raw::MountConfig> for MountConfig {
 impl TryFrom<raw::ProcessConfig> for ProcessConfig {
     type Error = ValidationError;
     fn try_from(value: raw::ProcessConfig) -> Result<Self, Self::Error> {
-        if value.args.is_empty() {
-            return Err(ValidationError::EmptyArgs);
-        }
+        let mut iter = value.args.into_iter();
+        let executable = match iter.next() {
+            Some(e) => e.to_owned(),
+            None => return Err(ValidationError::EmptyArgs),
+        };
+        let args = iter.collect();
         let user = UserConfig::from(value.user);
         let capabilities;
         if let Some(raw_capabilites) = value.capabilities {
@@ -262,7 +266,8 @@ impl TryFrom<raw::ProcessConfig> for ProcessConfig {
         Ok(Self {
             cwd: AbsolutePath::new(value.cwd),
             env: value.env.unwrap_or_default(),
-            args: value.args,
+            executable,
+            args,
             user,
             capabilities,
             no_new_privileges,

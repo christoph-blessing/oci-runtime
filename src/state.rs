@@ -198,10 +198,14 @@ impl Creating {
             ) {
                 Ok(_) => 0,
                 Err(e) => match e {
-                    ChildError::Syscall(_) => 2,
+                    ChildError::Syscall(e) => {
+                        println!("{}", e);
+                        2
+                    }
                     ChildError::Io(_) => 3,
                     ChildError::NulByte(_) => 4,
                     ChildError::Capabilities(_) => 5,
+                    ChildError::ExecutableNotFound => 6,
                 },
             }
         });

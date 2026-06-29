@@ -43,27 +43,15 @@ pub fn run(
         .collect::<Result<Vec<_>, _>>()?;
     let envp: Vec<&CStr> = env_c.iter().map(|s| s.as_c_str()).collect();
 
-    // Create argv and try to resolve absolute path to executable
-    let maybe_path_env = config
-        .process
-        .env
-        .iter()
-        .find(|&s| s.starts_with("PATH="))
-        .map(|s| &s[5..]);
-    let mut args = config.process.args.clone();
-    if let Some(path_env) = maybe_path_env {
-        if let Some(absolute_file) = path_env
-            .split(":")
-            .map(|s| {
-                let mut p = PathBuf::from(s);
-                p.push(&args[0]);
-                p
-            })
-            .find(|p| p.exists())
-        {
-            args[0] = absolute_file.to_string_lossy().into_owned();
-        }
-    }
+    let executable = match resolve_executable(&config.process.env, &config.process.executable) {
+        Some(e) => e,
+        None => return Err(ChildError::ExecutableNotFound),
+    };
+
+    let args: Vec<String> = std::iter::once(executable.to_string_lossy().into_owned())
+        .chain(config.process.args.iter().cloned())
+        .collect();
+
     let args_c: Vec<CString> = args
         .iter()
         .map(|a| CString::new(a.as_str()))
@@ -90,6 +78,7 @@ pub enum ChildError {
     Syscall(nix::Error),
     NulByte(NulError),
     Capabilities(CapsError),
+    ExecutableNotFound,
 }
 
 impl From<io::Error> for ChildError {
@@ -264,6 +253,25 @@ fn apply_readonly_paths(readonly_paths: &Vec<AbsolutePath>) -> Result<(), ChildE
         )?;
     }
     Ok(())
+}
+
+fn resolve_executable(env: &[String], executable: &str) -> Option<PathBuf> {
+    if executable.contains("/") {
+        return Some(PathBuf::from(executable));
+    }
+
+    let path_var = env
+        .iter()
+        .find(|&s| s.starts_with("PATH="))
+        .map(|s| &s[5..])?;
+
+    for path in path_var.split(":") {
+        let candidate = Path::new(path).join(executable);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn apply_capabilities(config: &Config) -> Result<(), ChildError> {
