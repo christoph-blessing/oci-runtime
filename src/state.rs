@@ -1,19 +1,11 @@
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::fd::{BorrowedFd, IntoRawFd};
 use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
 
-use nix::sys::signal::Signal;
-use nix::sys::stat::Mode;
-use nix::unistd::Pid;
 use serde::{Deserialize, Serialize};
 
 use crate::config::error::ConfigError;
-use crate::config::validated::{Config, IdMappingConfig};
-use crate::shim::child::ChildError;
-
-const STACK_SIZE: usize = 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -139,26 +131,7 @@ impl Creating {
         state_dir(self.common.id.as_str())
     }
 
-    pub fn finish_setup(self, done_fd: i32) -> Result<Created, StateError> {
-        let created = match self.setup_child() {
-            Ok(p) => {
-                Self::send_done_signal(done_fd, true)?;
-                p
-            }
-            Err(e) => {
-                Self::send_done_signal(done_fd, false)?;
-                return Err(e);
-            }
-        };
-        Ok(created)
-    }
-
-    fn setup_child(self) -> Result<Created, StateError> {
-        let guard = StateGuard::new(&self.common.id);
-        let start_fifo_path = self.create_start_signal_fifo()?;
-        let config = Config::new(self.common.bundle.as_path())?;
-        let pid = Self::clone_child(&config, &start_fifo_path)?;
-
+    pub fn finish_setup(self, pid: i32, start_fifo_path: &Path) -> Result<Created, StateError> {
         let created = Created {
             common: Common {
                 oci_version: self.common.oci_version,
@@ -166,103 +139,13 @@ impl Creating {
                 bundle: self.common.bundle,
                 annotations: self.common.annotations,
             },
-            pid: pid.as_raw(),
+            pid: pid,
             internal: CreatedInternal {
                 start_signal: start_fifo_path.to_path_buf(),
             },
         };
         created.save()?;
-        guard.confirm();
         Ok(created)
-    }
-
-    fn create_start_signal_fifo(&self) -> Result<PathBuf, StateError> {
-        let start_fifo_path = self.state_dir().join("start.fifo");
-        nix::unistd::mkfifo(&start_fifo_path, Mode::S_IRWXU)?;
-        Ok(start_fifo_path)
-    }
-
-    fn clone_child(config: &Config, start_fifo_path: &Path) -> Result<Pid, StateError> {
-        let mut stack = vec![0u8; STACK_SIZE];
-
-        let (read_mappings_ready, write_mappings_ready) = nix::unistd::pipe()?;
-        let read_mappings_ready_fd = read_mappings_ready.into_raw_fd();
-        let write_mappings_ready_fd = write_mappings_ready.into_raw_fd();
-
-        let cb = Box::new(|| {
-            match crate::shim::child::run(
-                &config,
-                read_mappings_ready_fd,
-                write_mappings_ready_fd,
-                start_fifo_path,
-            ) {
-                Ok(_) => 0,
-                Err(e) => match e {
-                    ChildError::Syscall(e) => {
-                        println!("{}", e);
-                        2
-                    }
-                    ChildError::Io(_) => 3,
-                    ChildError::NulByte(_) => 4,
-                    ChildError::Capabilities(_) => 5,
-                    ChildError::ExecutableNotFound => 6,
-                },
-            }
-        });
-        let pid = unsafe {
-            nix::sched::clone(
-                cb,
-                &mut stack,
-                config.linux.clone_flags,
-                Some(Signal::SIGCHLD as i32),
-            )
-        }?;
-
-        nix::unistd::close(read_mappings_ready_fd)?;
-        Self::write_id_mappings(pid, config)?;
-        Self::send_mappings_ready_signal(write_mappings_ready_fd)?;
-
-        Ok(pid)
-    }
-
-    fn write_id_mappings(pid: Pid, config: &Config) -> Result<(), StateError> {
-        std::fs::write(
-            format!("/proc/{}/uid_map", pid),
-            Self::create_id_map_contents(&config.linux.uid_mappings),
-        )?;
-
-        std::fs::write(format!("/proc/{}/setgroups", pid), "deny")?;
-        std::fs::write(
-            format!("/proc/{}/gid_map", pid),
-            Self::create_id_map_contents(&config.linux.gid_mappings),
-        )?;
-        Ok(())
-    }
-
-    fn send_mappings_ready_signal(write_fd: i32) -> Result<(), StateError> {
-        let mut buffer = vec![0u8; 1];
-        let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };
-        nix::unistd::write(borrowed, &mut buffer)?;
-        nix::unistd::close(write_fd)?;
-        Ok(())
-    }
-
-    fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
-        mappings
-            .iter()
-            .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
-            .collect()
-    }
-
-    fn send_done_signal(done_fd: i32, is_success: bool) -> Result<(), StateError> {
-        let mut buf;
-        if is_success {
-            buf = [1u8; 1];
-        } else {
-            buf = [0u8; 1];
-        }
-        nix::unistd::write(unsafe { BorrowedFd::borrow_raw(done_fd) }, &mut buf)?;
-        Ok(())
     }
 }
 
@@ -358,20 +241,20 @@ pub fn state_dir(id: &str) -> PathBuf {
     ))
 }
 
-struct StateGuard {
+pub struct StateGuard {
     dir: PathBuf,
     confirmed: bool,
 }
 
 impl StateGuard {
-    fn new(id: &str) -> Self {
+    pub fn new(id: &str) -> Self {
         Self {
             dir: crate::state::state_dir(id),
             confirmed: false,
         }
     }
 
-    fn confirm(mut self) {
+    pub fn confirm(mut self) {
         self.confirmed = true;
     }
 }
