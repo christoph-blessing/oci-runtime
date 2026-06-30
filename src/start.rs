@@ -4,12 +4,13 @@ use std::{
     path::Path,
 };
 
-use crate::state::{Created, StateError};
+use crate::state::{Created, StateError, persist};
 
 pub fn run(id: &str) -> Result<(), StartError> {
     let created = Created::load(id)?;
     send_start_signal(&created.internal.start_signal)?;
-    created.start()?;
+    let running = created.start()?;
+    persist(&running.into())?;
     Ok(())
 }
 

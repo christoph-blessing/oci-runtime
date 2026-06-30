@@ -15,7 +15,7 @@ use crate::{
         validated::{Config, IdMappingConfig},
     },
     shim::child::ChildError,
-    state::{Creating, StateError, StateGuard, state_dir},
+    state::{Creating, StateError, StateGuard, persist, state_dir},
 };
 
 pub mod child;
@@ -50,6 +50,7 @@ pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
 
 fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
     let creating = Creating::new(id, bundle.to_path_buf(), None)?;
+    persist(&creating.clone().into())?;
     let guard = StateGuard::new(id);
     let start_fifo_path = create_start_signal_fifo(id)?;
     let config = Config::new(bundle)?;
@@ -77,7 +78,8 @@ fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
         }
     }
 
-    creating.finish_setup(pid.as_raw(), &start_fifo_path)?;
+    let created = creating.finish_setup(pid.as_raw(), &start_fifo_path)?;
+    persist(&created.into())?;
     guard.confirm();
     Ok(pid)
 }

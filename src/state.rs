@@ -54,12 +54,6 @@ pub struct Running {
 }
 
 impl State {
-    fn save(&self) -> Result<(), StateError> {
-        let json = serde_json::to_string(self)?;
-        std::fs::write(state_dir(self.id().as_str()).join("state.json"), json)?;
-        Ok(())
-    }
-
     fn load(id: &str) -> Result<Self, StateError> {
         let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
@@ -89,6 +83,30 @@ impl State {
     }
 }
 
+impl From<Creating> for State {
+    fn from(value: Creating) -> Self {
+        Self::Creating(value)
+    }
+}
+
+impl From<Created> for State {
+    fn from(value: Created) -> Self {
+        Self::Created(value)
+    }
+}
+
+impl From<Running> for State {
+    fn from(value: Running) -> Self {
+        Self::Running(value)
+    }
+}
+
+pub fn persist(state: &State) -> Result<(), StateError> {
+    let json = serde_json::to_string(state)?;
+    std::fs::write(state_dir(state.id().as_str()).join("state.json"), json)?;
+    Ok(())
+}
+
 impl Creating {
     pub fn new(
         id: &str,
@@ -107,7 +125,6 @@ impl Creating {
             return Err(StateError::AlreadyExists(id.to_string()));
         }
         std::fs::create_dir_all(state_dir(id))?;
-        state.save()?;
         Ok(state)
     }
 
@@ -118,11 +135,6 @@ impl Creating {
                 state: other.as_string(),
             }),
         }
-    }
-
-    fn save(&self) -> Result<(), StateError> {
-        let state = State::Creating(self.clone());
-        state.save()
     }
 
     pub fn state_dir(&self) -> PathBuf {
@@ -142,7 +154,6 @@ impl Creating {
                 start_signal: start_fifo_path.to_path_buf(),
             },
         };
-        created.save()?;
         Ok(created)
     }
 }
@@ -157,11 +168,6 @@ impl Created {
         }
     }
 
-    fn save(&self) -> Result<(), StateError> {
-        let state = State::Created(self.clone());
-        state.save()
-    }
-
     pub fn start(self) -> Result<Running, StateError> {
         let state = Running {
             common: Common {
@@ -172,15 +178,7 @@ impl Created {
             },
             pid: self.pid,
         };
-        state.save()?;
         Ok(state)
-    }
-}
-
-impl Running {
-    fn save(&self) -> Result<(), StateError> {
-        let state = State::Running(self.clone());
-        state.save()
     }
 }
 
