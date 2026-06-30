@@ -60,24 +60,19 @@ pub struct Creating {
 }
 
 impl Creating {
-    pub fn new(
-        id: &str,
-        bundle: PathBuf,
-        annotations: Option<HashMap<String, String>>,
-    ) -> Result<Self, StateError> {
-        let state = Self {
+    pub fn new(id: &str, bundle: PathBuf, annotations: Option<HashMap<String, String>>) -> Self {
+        Self {
             common: Common {
                 oci_version: String::from("1.3.0"),
                 id: id.to_string(),
                 bundle,
                 annotations,
             },
-        };
-        Ok(state)
+        }
     }
 
-    pub fn finish_setup(self, pid: i32, start_fifo_path: &Path) -> Result<Created, StateError> {
-        let created = Created {
+    pub fn finish_setup(self, pid: i32, start_fifo_path: &Path) -> Created {
+        Created {
             common: Common {
                 oci_version: self.common.oci_version,
                 id: self.common.id,
@@ -88,8 +83,7 @@ impl Creating {
             internal: CreatedInternal {
                 start_signal: start_fifo_path.to_path_buf(),
             },
-        };
-        Ok(created)
+        }
     }
 }
 
@@ -103,8 +97,8 @@ pub struct Created {
 }
 
 impl Created {
-    pub fn start(self) -> Result<Running, StateError> {
-        let state = Running {
+    pub fn start(self) -> Running {
+        Running {
             common: Common {
                 oci_version: self.common.oci_version,
                 id: self.common.id,
@@ -112,8 +106,7 @@ impl Created {
                 annotations: self.common.annotations,
             },
             pid: self.pid,
-        };
-        Ok(state)
+        }
     }
 }
 
@@ -255,13 +248,12 @@ impl Drop for StateGuard {
 pub trait Stoppable {
     fn into_common(self) -> Common;
 
-    fn stop(self) -> Result<Stopped, StateError>
+    fn stop(self) -> Stopped
     where
         Self: Sized,
     {
-        let state = Stopped {
+        Stopped {
             common: self.into_common(),
-        };
-        Ok(state)
+        }
     }
 }

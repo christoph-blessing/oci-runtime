@@ -12,7 +12,7 @@ pub fn run(id: &str) -> Result<(), StartError> {
         other => return Err(StartError::NotCreated(other.as_string())),
     };
     send_start_signal(&created.internal.start_signal)?;
-    let running = created.start()?;
+    let running = created.start();
     persist(&running.into())?;
     Ok(())
 }
