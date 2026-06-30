@@ -11,6 +11,7 @@ pub enum State {
     Creating(Creating),
     Created(Created),
     Running(Running),
+    Stopped(Stopped),
 }
 
 impl State {
@@ -19,6 +20,7 @@ impl State {
             Self::Creating(s) => s.common.id.to_string(),
             Self::Created(s) => s.common.id.to_string(),
             Self::Running(s) => s.common.id.to_string(),
+            Self::Stopped(s) => s.common.id.to_string(),
         }
     }
 
@@ -27,6 +29,7 @@ impl State {
             Self::Creating(_) => String::from("creating"),
             Self::Created(_) => String::from("created"),
             Self::Running(_) => String::from("running"),
+            Self::Stopped(_) => String::from("stopped"),
         }
     }
 }
@@ -114,6 +117,12 @@ impl Created {
     }
 }
 
+impl Stoppable for Created {
+    fn into_common(self) -> Common {
+        self.common
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatedInternal {
@@ -128,9 +137,22 @@ pub struct Running {
     pub pid: i32,
 }
 
+impl Stoppable for Running {
+    fn into_common(self) -> Common {
+        self.common
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Common {
+pub struct Stopped {
+    #[serde(flatten)]
+    common: Common,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Common {
     pub oci_version: String,
     pub id: String,
     pub bundle: PathBuf,
@@ -227,5 +249,19 @@ impl Drop for StateGuard {
         if !self.confirmed {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+}
+
+pub trait Stoppable {
+    fn into_common(self) -> Common;
+
+    fn stop(self) -> Result<Stopped, StateError>
+    where
+        Self: Sized,
+    {
+        let state = Stopped {
+            common: self.into_common(),
+        };
+        Ok(state)
     }
 }
