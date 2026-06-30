@@ -32,14 +32,11 @@ pub fn run() -> Result<(), CliError> {
         Err(CliError::Create(CreateError::ShimReportedFailure)) => {
             eprintln!("shim reported failure during setup");
         }
-        Err(CliError::Create(CreateError::State(StateError::InvalidState { ref state }))) => {
-            eprintln!("cannot create container in state {}", state)
-        }
 
         Err(CliError::Start(StartError::State(StateError::NotFound(ref id)))) => {
             eprintln!("container not found: {}", id);
         }
-        Err(CliError::Start(StartError::State(StateError::InvalidState { ref state }))) => {
+        Err(CliError::Start(StartError::NotCreated(ref state))) => {
             eprintln!("cannot start container in state {}", state)
         }
 

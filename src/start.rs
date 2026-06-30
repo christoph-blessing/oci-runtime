@@ -4,10 +4,13 @@ use std::{
     path::Path,
 };
 
-use crate::state::{Created, StateError, persist};
+use crate::state::{State, StateError, load, persist};
 
 pub fn run(id: &str) -> Result<(), StartError> {
-    let created = Created::load(id)?;
+    let created = match load(id)? {
+        State::Created(s) => s,
+        other => return Err(StartError::NotCreated(other.as_string())),
+    };
     send_start_signal(&created.internal.start_signal)?;
     let running = created.start()?;
     persist(&running.into())?;
@@ -24,6 +27,7 @@ fn send_start_signal(path: &Path) -> Result<(), StartError> {
 
 #[derive(Debug)]
 pub enum StartError {
+    NotCreated(String),
     State(StateError),
     Io(io::Error),
 }

@@ -54,18 +54,6 @@ pub struct Running {
 }
 
 impl State {
-    fn load(id: &str) -> Result<Self, StateError> {
-        let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                StateError::NotFound(e.to_string())
-            } else {
-                StateError::Io(e)
-            }
-        })?;
-        let state: State = serde_json::from_str(json.as_str())?;
-        Ok(state)
-    }
-
     fn id(&self) -> String {
         match self {
             Self::Creating(s) => s.common.id.to_string(),
@@ -74,7 +62,7 @@ impl State {
         }
     }
 
-    fn as_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             Self::Creating(_) => String::from("creating"),
             Self::Created(_) => String::from("created"),
@@ -107,6 +95,18 @@ pub fn persist(state: &State) -> Result<(), StateError> {
     Ok(())
 }
 
+pub fn load(id: &str) -> Result<State, StateError> {
+    let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
+        if e.kind() == io::ErrorKind::NotFound {
+            StateError::NotFound(e.to_string())
+        } else {
+            StateError::Io(e)
+        }
+    })?;
+    let state: State = serde_json::from_str(json.as_str())?;
+    Ok(state)
+}
+
 impl Creating {
     pub fn new(
         id: &str,
@@ -128,19 +128,6 @@ impl Creating {
         Ok(state)
     }
 
-    pub fn load(id: &str) -> Result<Self, StateError> {
-        match State::load(id)? {
-            State::Creating(c) => Ok(c),
-            other => Err(StateError::InvalidState {
-                state: other.as_string(),
-            }),
-        }
-    }
-
-    pub fn state_dir(&self) -> PathBuf {
-        state_dir(self.common.id.as_str())
-    }
-
     pub fn finish_setup(self, pid: i32, start_fifo_path: &Path) -> Result<Created, StateError> {
         let created = Created {
             common: Common {
@@ -159,15 +146,6 @@ impl Creating {
 }
 
 impl Created {
-    pub fn load(id: &str) -> Result<Self, StateError> {
-        match State::load(id)? {
-            State::Created(c) => Ok(c),
-            other => Err(StateError::InvalidState {
-                state: other.as_string(),
-            }),
-        }
-    }
-
     pub fn start(self) -> Result<Running, StateError> {
         let state = Running {
             common: Common {
@@ -190,7 +168,6 @@ pub enum StateError {
     Io(io::Error),
     Syscall(nix::Error),
     Config(ConfigError),
-    InvalidState { state: String },
 }
 
 impl From<serde_json::Error> for StateError {
