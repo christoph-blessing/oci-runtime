@@ -13,46 +13,6 @@ pub enum State {
     Running(Running),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Common {
-    pub oci_version: String,
-    pub id: String,
-    pub bundle: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub annotations: Option<HashMap<String, String>>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Creating {
-    #[serde(flatten)]
-    common: Common,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Created {
-    #[serde(flatten)]
-    common: Common,
-    pub pid: i32,
-    pub internal: CreatedInternal,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreatedInternal {
-    pub start_signal: PathBuf,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Running {
-    #[serde(flatten)]
-    common: Common,
-    pub pid: i32,
-}
-
 impl State {
     fn id(&self) -> String {
         match self {
@@ -89,28 +49,11 @@ impl From<Running> for State {
     }
 }
 
-pub fn persist(state: &State) -> Result<(), StateError> {
-    if let State::Creating(_) = state {
-        if state_dir(&state.id()).exists() {
-            return Err(StateError::AlreadyExists(state.id().to_string()));
-        }
-        std::fs::create_dir_all(state_dir(&state.id()))?;
-    }
-    let json = serde_json::to_string(state)?;
-    std::fs::write(state_dir(state.id().as_str()).join("state.json"), json)?;
-    Ok(())
-}
-
-pub fn load(id: &str) -> Result<State, StateError> {
-    let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
-        if e.kind() == io::ErrorKind::NotFound {
-            StateError::NotFound(e.to_string())
-        } else {
-            StateError::Io(e)
-        }
-    })?;
-    let state: State = serde_json::from_str(json.as_str())?;
-    Ok(state)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Creating {
+    #[serde(flatten)]
+    common: Common,
 }
 
 impl Creating {
@@ -147,6 +90,15 @@ impl Creating {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Created {
+    #[serde(flatten)]
+    common: Common,
+    pub pid: i32,
+    pub internal: CreatedInternal,
+}
+
 impl Created {
     pub fn start(self) -> Result<Running, StateError> {
         let state = Running {
@@ -160,6 +112,30 @@ impl Created {
         };
         Ok(state)
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedInternal {
+    pub start_signal: PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Running {
+    #[serde(flatten)]
+    common: Common,
+    pub pid: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Common {
+    pub oci_version: String,
+    pub id: String,
+    pub bundle: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug)]
@@ -202,6 +178,30 @@ pub fn state_dir(id: &str) -> PathBuf {
         nix::unistd::getuid(),
         id
     ))
+}
+
+pub fn persist(state: &State) -> Result<(), StateError> {
+    if let State::Creating(_) = state {
+        if state_dir(&state.id()).exists() {
+            return Err(StateError::AlreadyExists(state.id().to_string()));
+        }
+        std::fs::create_dir_all(state_dir(&state.id()))?;
+    }
+    let json = serde_json::to_string(state)?;
+    std::fs::write(state_dir(state.id().as_str()).join("state.json"), json)?;
+    Ok(())
+}
+
+pub fn load(id: &str) -> Result<State, StateError> {
+    let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
+        if e.kind() == io::ErrorKind::NotFound {
+            StateError::NotFound(e.to_string())
+        } else {
+            StateError::Io(e)
+        }
+    })?;
+    let state: State = serde_json::from_str(json.as_str())?;
+    Ok(state)
 }
 
 pub struct StateGuard {
