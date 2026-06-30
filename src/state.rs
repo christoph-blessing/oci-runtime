@@ -90,6 +90,12 @@ impl From<Running> for State {
 }
 
 pub fn persist(state: &State) -> Result<(), StateError> {
+    if let State::Creating(_) = state {
+        if state_dir(&state.id()).exists() {
+            return Err(StateError::AlreadyExists(state.id().to_string()));
+        }
+        std::fs::create_dir_all(state_dir(&state.id()))?;
+    }
     let json = serde_json::to_string(state)?;
     std::fs::write(state_dir(state.id().as_str()).join("state.json"), json)?;
     Ok(())
@@ -121,10 +127,6 @@ impl Creating {
                 annotations,
             },
         };
-        if state_dir(id).exists() {
-            return Err(StateError::AlreadyExists(id.to_string()));
-        }
-        std::fs::create_dir_all(state_dir(id))?;
         Ok(state)
     }
 
