@@ -55,61 +55,19 @@ fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
     let start_fifo_path = create_start_signal_fifo(id)?;
     let config = Config::new(bundle)?;
 
-    let (read_child_ready, write_child_ready) = nix::unistd::pipe()?;
-    let read_child_ready_fd = read_child_ready.into_raw_fd();
-    let write_child_ready_fd = write_child_ready.into_raw_fd();
+    let child_ready_pipe = RawPipe::new()?;
+    let mappings_ready_pipe = RawPipe::new()?;
 
-    let pid = clone_child(
-        &config,
-        read_child_ready_fd,
-        write_child_ready_fd,
-        &start_fifo_path,
-    )?;
-
-    nix::unistd::close(write_child_ready_fd)?;
-    let borrowed = unsafe { BorrowedFd::borrow_raw(read_child_ready_fd) };
-    let mut buf = [0u8; 1];
-    let n = nix::unistd::read(borrowed, &mut buf)?;
-    if n == 0 {
-        return Err(ShimError::ChildExitedEarly);
-    } else {
-        if buf[0] == 0 {
-            return Err(ShimError::ChildReportedFailure);
-        }
-    }
-
-    let created = creating.finish_setup(pid.as_raw(), &start_fifo_path);
-    persist(&created.into())?;
-    guard.confirm();
-    Ok(pid)
-}
-
-fn create_start_signal_fifo(id: &str) -> Result<PathBuf, ShimError> {
-    let start_fifo_path = state_dir(id).join("start.fifo");
-    nix::unistd::mkfifo(&start_fifo_path, Mode::S_IRWXU)?;
-    Ok(start_fifo_path)
-}
-
-fn clone_child(
-    config: &Config,
-    read_fd: i32,
-    write_fd: i32,
-    start_fifo_path: &Path,
-) -> Result<Pid, ShimError> {
     let mut stack = vec![0u8; STACK_SIZE];
-
-    let (read_mappings_ready, write_mappings_ready) = nix::unistd::pipe()?;
-    let read_mappings_ready_fd = read_mappings_ready.into_raw_fd();
-    let write_mappings_ready_fd = write_mappings_ready.into_raw_fd();
 
     let cb = Box::new(|| {
         match crate::shim::child::run(
             &config,
-            read_mappings_ready_fd,
-            write_mappings_ready_fd,
-            read_fd,
-            write_fd,
-            start_fifo_path,
+            mappings_ready_pipe.read_fd,
+            mappings_ready_pipe.write_fd,
+            child_ready_pipe.read_fd,
+            child_ready_pipe.write_fd,
+            &start_fifo_path,
         ) {
             Ok(_) => 0,
             Err(e) => match e {
@@ -133,11 +91,60 @@ fn clone_child(
         )
     }?;
 
-    nix::unistd::close(read_mappings_ready_fd)?;
-    write_id_mappings(pid, config)?;
-    send_mappings_ready_signal(write_mappings_ready_fd)?;
+    write_id_mappings(pid, &config)?;
+    let mut buf = vec![0u8; 1];
+    mappings_ready_pipe.write(&mut buf)?;
 
+    let (n, buf) = child_ready_pipe.read()?;
+    if n == 0 {
+        return Err(ShimError::ChildExitedEarly);
+    } else {
+        if buf[0] == 0 {
+            return Err(ShimError::ChildReportedFailure);
+        }
+    }
+
+    let created = creating.finish_setup(pid.as_raw(), &start_fifo_path);
+    persist(&created.into())?;
+    guard.confirm();
     Ok(pid)
+}
+
+struct RawPipe {
+    read_fd: i32,
+    write_fd: i32,
+}
+
+impl RawPipe {
+    fn new() -> Result<Self, ShimError> {
+        let (read, write) = nix::unistd::pipe()?;
+        let read_fd = read.into_raw_fd();
+        let write_fd = write.into_raw_fd();
+        Ok(Self { read_fd, write_fd })
+    }
+
+    fn read(&self) -> Result<(usize, [u8; 1]), ShimError> {
+        nix::unistd::close(self.write_fd)?;
+        let borrowed = unsafe { BorrowedFd::borrow_raw(self.read_fd) };
+        let mut buf = [0u8; 1];
+        let n = nix::unistd::read(borrowed, &mut buf)?;
+        nix::unistd::close(self.read_fd)?;
+        Ok((n, buf))
+    }
+
+    fn write(&self, buf: &mut [u8]) -> Result<usize, ShimError> {
+        nix::unistd::close(self.read_fd)?;
+        let borrowed = unsafe { BorrowedFd::borrow_raw(self.write_fd) };
+        let n = nix::unistd::write(borrowed, buf)?;
+        nix::unistd::close(self.write_fd)?;
+        Ok(n)
+    }
+}
+
+fn create_start_signal_fifo(id: &str) -> Result<PathBuf, ShimError> {
+    let start_fifo_path = state_dir(id).join("start.fifo");
+    nix::unistd::mkfifo(&start_fifo_path, Mode::S_IRWXU)?;
+    Ok(start_fifo_path)
 }
 
 fn write_id_mappings(pid: Pid, config: &Config) -> Result<(), ShimError> {
@@ -151,14 +158,6 @@ fn write_id_mappings(pid: Pid, config: &Config) -> Result<(), ShimError> {
         format!("/proc/{}/gid_map", pid),
         create_id_map_contents(&config.linux.gid_mappings),
     )?;
-    Ok(())
-}
-
-fn send_mappings_ready_signal(write_fd: i32) -> Result<(), ShimError> {
-    let mut buffer = vec![0u8; 1];
-    let borrowed = unsafe { BorrowedFd::borrow_raw(write_fd) };
-    nix::unistd::write(borrowed, &mut buffer)?;
-    nix::unistd::close(write_fd)?;
     Ok(())
 }
 
