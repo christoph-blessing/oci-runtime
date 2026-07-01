@@ -26,13 +26,9 @@ const EXIT_SYSCALL: i32 = 2;
 const EXIT_IO: i32 = 3;
 
 pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
-    let pid = match setup_child(id, bundle) {
-        Ok(p) => {
-            send_done_signal(done_fd, true)?;
-            p
-        }
+    let pid = match setup_child(id, bundle, done_fd) {
+        Ok(p) => p,
         Err(e) => {
-            send_done_signal(done_fd, false)?;
             return Err(e);
         }
     };
@@ -48,17 +44,18 @@ pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
     }
 }
 
-fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
+fn setup_child(id: &str, bundle: &Path, ready_fd: i32) -> Result<Pid, ShimError> {
+    let signal_guard = ReadySignalGuard::new(ready_fd);
+
     let creating = Creating::new(id, bundle.to_path_buf(), None);
     persist(&creating.clone().into())?;
-    let guard = StateGuard::new(id);
+    let state_guard = StateGuard::new(id);
+
     let start_fifo_path = create_start_signal_fifo(id)?;
     let config = Config::new(bundle)?;
 
     let child_ready_pipe = RawPipe::new()?;
     let mappings_ready_pipe = RawPipe::new()?;
-
-    let mut stack = vec![0u8; STACK_SIZE];
 
     let cb = Box::new(|| {
         match crate::shim::child::run(
@@ -71,10 +68,7 @@ fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
         ) {
             Ok(_) => 0,
             Err(e) => match e {
-                ChildError::Syscall(e) => {
-                    println!("{}", e);
-                    2
-                }
+                ChildError::Syscall(e) => 2,
                 ChildError::Io(_) => 3,
                 ChildError::NulByte(_) => 4,
                 ChildError::Capabilities(_) => 5,
@@ -82,6 +76,7 @@ fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
             },
         }
     });
+    let mut stack = vec![0u8; STACK_SIZE];
     let pid = unsafe {
         nix::sched::clone(
             cb,
@@ -106,8 +101,39 @@ fn setup_child(id: &str, bundle: &Path) -> Result<Pid, ShimError> {
 
     let created = creating.finish_setup(pid.as_raw(), &start_fifo_path);
     persist(&created.into())?;
-    guard.confirm();
+    state_guard.confirm();
+
+    signal_guard.confirm();
+
     Ok(pid)
+}
+
+struct ReadySignalGuard {
+    fd: i32,
+    confirmed: bool,
+}
+
+impl ReadySignalGuard {
+    fn new(fd: i32) -> Self {
+        Self {
+            fd,
+            confirmed: false,
+        }
+    }
+    fn confirm(mut self) {
+        let mut buf = [1u8; 1];
+        _ = nix::unistd::write(unsafe { BorrowedFd::borrow_raw(self.fd) }, &mut buf);
+        self.confirmed = true;
+    }
+}
+
+impl Drop for ReadySignalGuard {
+    fn drop(&mut self) {
+        if !self.confirmed {
+            let mut buf = [0u8; 1];
+            _ = nix::unistd::write(unsafe { BorrowedFd::borrow_raw(self.fd) }, &mut buf);
+        }
+    }
 }
 
 struct RawPipe {
