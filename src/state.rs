@@ -147,6 +147,13 @@ impl Stoppable for Running {
 pub struct Stopped {
     #[serde(flatten)]
     common: Common,
+    internal: StoppedInternal,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoppedInternal {
+    code: i32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -254,12 +261,13 @@ impl Drop for StateGuard {
 pub trait Stoppable {
     fn into_common(self) -> Common;
 
-    fn stop(self) -> Stopped
+    fn stop(self, code: i32) -> Stopped
     where
         Self: Sized,
     {
         Stopped {
             common: self.into_common(),
+            internal: StoppedInternal { code },
         }
     }
 }

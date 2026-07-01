@@ -15,7 +15,7 @@ use crate::{
         validated::{Config, IdMappingConfig},
     },
     shim::child::ChildError,
-    state::{Creating, State, StateError, StateGuard, Stoppable, persist, state_dir},
+    state::{Creating, State, StateError, StateGuard, Stoppable},
 };
 
 pub mod child;
@@ -29,7 +29,7 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let signal_guard = ReadySignalGuard::new(ready_fd);
 
     let creating = Creating::new(id, bundle.to_path_buf(), None);
-    persist(&creating.clone().into())?;
+    crate::state::persist(&creating.clone().into())?;
     let state_guard = StateGuard::new(id);
 
     let start_fifo_path = create_start_signal_fifo(id)?;
@@ -82,7 +82,7 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     }
 
     let created = creating.finish_setup(pid.as_raw(), &start_fifo_path);
-    persist(&created.into())?;
+    crate::state::persist(&created.into())?;
     state_guard.confirm();
 
     signal_guard.confirm();
@@ -96,21 +96,22 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     };
     child_guard.confirm();
 
-    match crate::state::load(id)? {
-        State::Running(r) => {
-            let s = r.stop();
-            crate::state::persist(&s.into())?;
-        }
+    let running = match crate::state::load(id)? {
+        State::Running(r) => r,
         other => panic!("unexpected state: {}", other.as_string()),
     };
 
     match status {
-        WaitStatus::Exited(_, code) => match code {
-            EXIT_OK => Ok(()),
-            EXIT_SYSCALL => Err(ShimError::ChildSyscall),
-            EXIT_IO => Err(ShimError::ChildIo),
-            other => panic!("unexpected exit code: {}", other),
-        },
+        WaitStatus::Exited(_, code) => {
+            let stopped = running.stop(code);
+            crate::state::persist(&stopped.into())?;
+            match code {
+                EXIT_OK => Ok(()),
+                EXIT_SYSCALL => Err(ShimError::ChildSyscall),
+                EXIT_IO => Err(ShimError::ChildIo),
+                other => panic!("unexpected exit code: {}", other),
+            }
+        }
         other => panic!("unexpected wait status: {:?}", other),
     }
 }
@@ -201,7 +202,7 @@ impl RawPipe {
 }
 
 fn create_start_signal_fifo(id: &str) -> Result<PathBuf, ShimError> {
-    let start_fifo_path = state_dir(id).join("start.fifo");
+    let start_fifo_path = crate::state::state_dir(id).join("start.fifo");
     nix::unistd::mkfifo(&start_fifo_path, Mode::S_IRWXU)?;
     Ok(start_fifo_path)
 }
