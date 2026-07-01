@@ -52,6 +52,12 @@ impl From<Running> for State {
     }
 }
 
+impl From<Stopped> for State {
+    fn from(value: Stopped) -> Self {
+        Self::Stopped(value)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Creating {
