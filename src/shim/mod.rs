@@ -35,8 +35,8 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let start_fifo_path = create_start_signal_fifo(id)?;
     let config = Config::new(bundle)?;
 
-    let child_ready_pipe = RawPipe::new()?;
-    let mappings_ready_pipe = RawPipe::new()?;
+    let child_ready_pipe = SignalPipe::new()?;
+    let mappings_ready_pipe = SignalPipe::new()?;
 
     let cb = Box::new(|| {
         match crate::shim::child::run(
@@ -69,17 +69,16 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let child_guard = ChildGuard::new(pid);
 
     write_id_mappings(pid, &config)?;
-    let mut buf = vec![0u8; 1];
-    mappings_ready_pipe.write(&mut buf)?;
+    mappings_ready_pipe.send(true)?;
 
-    let (n, buf) = child_ready_pipe.read()?;
-    if n == 0 {
-        return Err(ShimError::ChildExitedEarly);
-    } else {
-        if buf[0] == 0 {
-            return Err(ShimError::ChildReportedFailure);
+    match child_ready_pipe.recv()? {
+        Some(c) => {
+            if !c {
+                return Err(ShimError::ChildReportedFailure);
+            }
         }
-    }
+        None => return Err(ShimError::ChildExitedEarly),
+    };
 
     let created = creating.finish_setup(pid.as_raw(), &start_fifo_path);
     crate::state::persist(&created.into())?;
@@ -170,12 +169,12 @@ impl Drop for ChildGuard {
     }
 }
 
-struct RawPipe {
+struct SignalPipe {
     read_fd: i32,
     write_fd: i32,
 }
 
-impl RawPipe {
+impl SignalPipe {
     fn new() -> Result<Self, ShimError> {
         let (read, write) = nix::unistd::pipe()?;
         let read_fd = read.into_raw_fd();
@@ -183,21 +182,36 @@ impl RawPipe {
         Ok(Self { read_fd, write_fd })
     }
 
-    fn read(&self) -> Result<(usize, [u8; 1]), ShimError> {
+    fn recv(&self) -> Result<Option<bool>, ShimError> {
         nix::unistd::close(self.write_fd)?;
         let borrowed = unsafe { BorrowedFd::borrow_raw(self.read_fd) };
         let mut buf = [0u8; 1];
         let n = nix::unistd::read(borrowed, &mut buf)?;
         nix::unistd::close(self.read_fd)?;
-        Ok((n, buf))
+
+        let mut option = None;
+        if n != 0 {
+            if buf[0] == 1 {
+                option = Some(true);
+            } else {
+                option = Some(false);
+            }
+        }
+
+        Ok(option)
     }
 
-    fn write(&self, buf: &mut [u8]) -> Result<usize, ShimError> {
+    fn send(&self, confirm: bool) -> Result<(), ShimError> {
+        let mut buf = [0u8; 1];
+        if confirm {
+            buf = [1u8; 1];
+        }
+
         nix::unistd::close(self.read_fd)?;
         let borrowed = unsafe { BorrowedFd::borrow_raw(self.write_fd) };
-        let n = nix::unistd::write(borrowed, buf)?;
+        nix::unistd::write(borrowed, &buf)?;
         nix::unistd::close(self.write_fd)?;
-        Ok(n)
+        Ok(())
     }
 }
 
