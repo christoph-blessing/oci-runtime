@@ -25,26 +25,7 @@ const EXIT_OK: i32 = 0;
 const EXIT_SYSCALL: i32 = 2;
 const EXIT_IO: i32 = 3;
 
-pub fn run(id: &str, bundle: &Path, done_fd: i32) -> Result<(), ShimError> {
-    let pid = match setup_child(id, bundle, done_fd) {
-        Ok(p) => p,
-        Err(e) => {
-            return Err(e);
-        }
-    };
-
-    match nix::sys::wait::waitpid(pid, None)? {
-        WaitStatus::Exited(_, code) => match code {
-            EXIT_OK => Ok(()),
-            EXIT_SYSCALL => Err(ShimError::ChildSyscall),
-            EXIT_IO => Err(ShimError::ChildIo),
-            other => panic!("unexpected exit code: {}", other),
-        },
-        other => panic!("unexpected wait status: {:?}", other),
-    }
-}
-
-fn setup_child(id: &str, bundle: &Path, ready_fd: i32) -> Result<Pid, ShimError> {
+pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let signal_guard = ReadySignalGuard::new(ready_fd);
 
     let creating = Creating::new(id, bundle.to_path_buf(), None);
@@ -68,7 +49,7 @@ fn setup_child(id: &str, bundle: &Path, ready_fd: i32) -> Result<Pid, ShimError>
         ) {
             Ok(_) => 0,
             Err(e) => match e {
-                ChildError::Syscall(e) => 2,
+                ChildError::Syscall(_) => 2,
                 ChildError::Io(_) => 3,
                 ChildError::NulByte(_) => 4,
                 ChildError::Capabilities(_) => 5,
@@ -85,6 +66,7 @@ fn setup_child(id: &str, bundle: &Path, ready_fd: i32) -> Result<Pid, ShimError>
             Some(Signal::SIGCHLD as i32),
         )
     }?;
+    let child_guard = ChildGuard::new(pid);
 
     write_id_mappings(pid, &config)?;
     let mut buf = vec![0u8; 1];
@@ -105,7 +87,24 @@ fn setup_child(id: &str, bundle: &Path, ready_fd: i32) -> Result<Pid, ShimError>
 
     signal_guard.confirm();
 
-    Ok(pid)
+    let status = loop {
+        match nix::sys::wait::waitpid(pid, None) {
+            Ok(s) => break s,
+            Err(nix::Error::EINTR) => continue,
+            Err(e) => return Err(e.into()),
+        }
+    };
+    child_guard.confirm();
+
+    match status {
+        WaitStatus::Exited(_, code) => match code {
+            EXIT_OK => Ok(()),
+            EXIT_SYSCALL => Err(ShimError::ChildSyscall),
+            EXIT_IO => Err(ShimError::ChildIo),
+            other => panic!("unexpected exit code: {}", other),
+        },
+        other => panic!("unexpected wait status: {:?}", other),
+    }
 }
 
 struct ReadySignalGuard {
@@ -132,6 +131,32 @@ impl Drop for ReadySignalGuard {
         if !self.confirmed {
             let mut buf = [0u8; 1];
             _ = nix::unistd::write(unsafe { BorrowedFd::borrow_raw(self.fd) }, &mut buf);
+        }
+    }
+}
+
+struct ChildGuard {
+    pid: Pid,
+    confirmed: bool,
+}
+
+impl ChildGuard {
+    fn new(pid: Pid) -> Self {
+        ChildGuard {
+            pid,
+            confirmed: false,
+        }
+    }
+    fn confirm(mut self) {
+        self.confirmed = true;
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if !self.confirmed {
+            let _ = nix::sys::signal::kill(self.pid, Signal::SIGKILL);
+            let _ = nix::sys::wait::waitpid(self.pid, None);
         }
     }
 }
