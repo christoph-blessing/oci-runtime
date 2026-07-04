@@ -28,7 +28,22 @@ const EXIT_CAPS: i32 = 5;
 const EXIT_EXEC_NOT_FOUND: i32 = 6;
 
 pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
-    let child_guard = setup(id, bundle, ready_fd)?;
+    let signal_guard = ReadySignalGuard::new(ready_fd);
+    let child_guard = match setup(id, bundle) {
+        Ok(child_guard) => {
+            let mut buf = [1u8; 1];
+            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &mut buf)?;
+            signal_guard.confirm();
+            child_guard
+        }
+        Err(e) => {
+            let mut buf = [0u8; 1];
+            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &mut buf)?;
+            signal_guard.confirm();
+            return Err(e);
+        }
+    };
+
     let status = loop {
         match nix::sys::wait::waitpid(child_guard.pid, None) {
             Ok(s) => break s,
@@ -51,9 +66,7 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     Ok(())
 }
 
-fn setup(id: &str, bundle: &Path, ready_fd: i32) -> Result<ChildGuard, ShimError> {
-    let signal_guard = ReadySignalGuard::new(ready_fd);
-
+fn setup(id: &str, bundle: &Path) -> Result<ChildGuard, ShimError> {
     let creating = Creating::new(id, bundle.to_path_buf(), None);
     crate::state::persist(&creating.clone().into())?;
     let state_guard = StateGuard::new(id);
@@ -122,7 +135,6 @@ fn setup(id: &str, bundle: &Path, ready_fd: i32) -> Result<ChildGuard, ShimError
     crate::state::persist(&created.into())?;
     state_guard.confirm();
 
-    signal_guard.confirm();
     Ok(child_guard)
 }
 
@@ -156,8 +168,6 @@ impl ReadySignalGuard {
         }
     }
     fn confirm(mut self) {
-        let mut buf = [1u8; 1];
-        _ = nix::unistd::write(unsafe { BorrowedFd::borrow_raw(self.fd) }, &mut buf);
         self.confirmed = true;
     }
 }
