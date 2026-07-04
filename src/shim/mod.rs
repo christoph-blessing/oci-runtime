@@ -21,11 +21,37 @@ use crate::{
 pub mod child;
 
 const STACK_SIZE: usize = 1024 * 1024;
-const EXIT_OK: i32 = 0;
 const EXIT_SYSCALL: i32 = 2;
 const EXIT_IO: i32 = 3;
+const EXIT_NUL_BYTE: i32 = 4;
+const EXIT_CAPS: i32 = 5;
+const EXIT_EXEC_NOT_FOUND: i32 = 6;
 
 pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
+    let child_guard = setup(id, bundle, ready_fd)?;
+    let status = loop {
+        match nix::sys::wait::waitpid(child_guard.pid, None) {
+            Ok(s) => break s,
+            Err(nix::Error::EINTR) => continue,
+            Err(e) => return Err(e.into()),
+        }
+    };
+    child_guard.confirm();
+
+    match status {
+        WaitStatus::Exited(_, code) => {
+            stop(id, ExitReason::Exited(code))?;
+        }
+        WaitStatus::Signaled(_, signal, _) => {
+            stop(id, ExitReason::Signaled(signal))?;
+        }
+        other => panic!("unexpected wait status: {:?}", other),
+    };
+
+    Ok(())
+}
+
+fn setup(id: &str, bundle: &Path, ready_fd: i32) -> Result<ChildGuard, ShimError> {
     let signal_guard = ReadySignalGuard::new(ready_fd);
 
     let creating = Creating::new(id, bundle.to_path_buf(), None);
@@ -71,13 +97,25 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     write_id_mappings(pid, &config)?;
     mappings_ready_pipe.send(true)?;
 
-    match child_ready_pipe.recv()? {
-        Some(c) => {
-            if !c {
-                return Err(ShimError::ChildReportedFailure);
-            }
+    match wait_for_child_setup(child_ready_pipe)? {
+        ChildSetup::Success => {}
+        ChildSetup::Failure => {
+            let status = nix::sys::wait::waitpid(pid, None)?;
+            child_guard.confirm();
+            let code = match status {
+                WaitStatus::Exited(_, code) => code,
+                other => panic!("unexpected wait status: {:?}", other),
+            };
+            let err = match code {
+                EXIT_SYSCALL => ShimError::ChildSyscall,
+                EXIT_IO => ShimError::ChildIo,
+                EXIT_NUL_BYTE => ShimError::ChildNulByte,
+                EXIT_CAPS => ShimError::ChildCapabilities,
+                EXIT_EXEC_NOT_FOUND => ShimError::ChildExecutableNotFound,
+                other => panic!("unexpected exit code: {}", other),
+            };
+            return Err(err);
         }
-        None => return Err(ShimError::ChildExitedEarly),
     };
 
     let created = creating.finish_setup(pid.as_raw(), &start_fifo_path);
@@ -85,32 +123,24 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     state_guard.confirm();
 
     signal_guard.confirm();
+    Ok(child_guard)
+}
 
-    let status = loop {
-        match nix::sys::wait::waitpid(pid, None) {
-            Ok(s) => break s,
-            Err(nix::Error::EINTR) => continue,
-            Err(e) => return Err(e.into()),
-        }
-    };
-    child_guard.confirm();
+enum ChildSetup {
+    Success,
+    Failure,
+}
 
-    match status {
-        WaitStatus::Exited(_, code) => {
-            stop(id, ExitReason::Exited(code))?;
-            match code {
-                EXIT_OK => Ok(()),
-                EXIT_SYSCALL => Err(ShimError::ChildSyscall),
-                EXIT_IO => Err(ShimError::ChildIo),
-                other => panic!("unexpected exit code: {}", other),
+fn wait_for_child_setup(pipe: SignalPipe) -> Result<ChildSetup, ShimError> {
+    match pipe.recv()? {
+        Some(c) => {
+            if !c {
+                return Ok(ChildSetup::Failure);
             }
         }
-        WaitStatus::Signaled(_, signal, _) => {
-            stop(id, ExitReason::Signaled(signal))?;
-            Ok(())
-        }
-        other => panic!("unexpected wait status: {:?}", other),
+        None => return Ok(ChildSetup::Failure),
     }
+    Ok(ChildSetup::Success)
 }
 
 struct ReadySignalGuard {
@@ -256,10 +286,11 @@ pub enum ShimError {
     Config(ConfigError),
     Syscall(nix::Error),
     Io(io::Error),
-    ChildReportedFailure,
-    ChildExitedEarly,
     ChildSyscall,
     ChildIo,
+    ChildNulByte,
+    ChildCapabilities,
+    ChildExecutableNotFound,
 }
 
 impl From<StateError> for ShimError {
