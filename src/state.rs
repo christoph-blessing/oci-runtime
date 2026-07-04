@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
 
+use nix::sys::signal::Signal;
 use serde::{Deserialize, Serialize};
 
 use crate::config::error::ConfigError;
@@ -153,7 +154,28 @@ pub struct Stopped {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoppedInternal {
-    code: i32,
+    exit_reason: ExitReason,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ExitReason {
+    Exited(i32),
+    Signaled(#[serde(with = "signal_serde")] Signal),
+}
+
+mod signal_serde {
+    use nix::sys::signal::Signal;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(signal: &Signal, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i32(*signal as i32)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Signal, D::Error> {
+        let num = i32::deserialize(d)?;
+        Signal::try_from(num).map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -261,13 +283,13 @@ impl Drop for StateGuard {
 pub trait Stoppable {
     fn into_common(self) -> Common;
 
-    fn stop(self, code: i32) -> Stopped
+    fn stop(self, exit_reason: ExitReason) -> Stopped
     where
         Self: Sized,
     {
         Stopped {
             common: self.into_common(),
-            internal: StoppedInternal { code },
+            internal: StoppedInternal { exit_reason },
         }
     }
 }

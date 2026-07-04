@@ -15,7 +15,7 @@ use crate::{
         validated::{Config, IdMappingConfig},
     },
     shim::child::ChildError,
-    state::{Creating, State, StateError, StateGuard, Stoppable},
+    state::{Creating, ExitReason, State, StateError, StateGuard, Stoppable},
 };
 
 pub mod child;
@@ -98,8 +98,8 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     match status {
         WaitStatus::Exited(_, code) => {
             let stopped = match crate::state::load(id)? {
-                State::Created(c) => c.stop(code),
-                State::Running(r) => r.stop(code),
+                State::Created(c) => c.stop(ExitReason::Exited(code)),
+                State::Running(r) => r.stop(ExitReason::Exited(code)),
                 other => panic!("unexpected state: {}", other.as_string()),
             };
             crate::state::persist(&stopped.into())?;
