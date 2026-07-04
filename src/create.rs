@@ -12,6 +12,7 @@ pub enum CreateError {
     State(StateError),
     Io(io::Error),
     Syscall(nix::Error),
+    AlreadyExists(String),
     ShimExitedEarly,
     ShimReportedFailure,
 }
@@ -34,7 +35,11 @@ impl From<nix::Error> for CreateError {
     }
 }
 
-pub fn run(container_id: &String, bundle_path: &Path) -> Result<(), CreateError> {
+pub fn run(container_id: &str, bundle_path: &Path) -> Result<(), CreateError> {
+    if crate::state::exists(container_id) {
+        return Err(CreateError::AlreadyExists(container_id.to_string()));
+    }
+
     let (mut recv_shim_done, send_shim_done) = std::io::pipe()?;
     nix::fcntl::fcntl(&send_shim_done, FcntlArg::F_SETFD(FdFlag::empty()))?;
 

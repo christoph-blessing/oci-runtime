@@ -27,8 +27,8 @@ pub fn run() -> Result<(), CliError> {
     match result {
         Ok(_) => std::process::exit(0),
 
-        Err(CliError::Create(CreateError::State(StateError::NotFound(ref id)))) => {
-            eprintln!("container not found: {}", id);
+        Err(CliError::Create(CreateError::AlreadyExists(ref id))) => {
+            eprintln!("container already exists: {}", id);
         }
         Err(CliError::Create(CreateError::ShimExitedEarly)) => {
             eprintln!("shim exited without becoming ready");

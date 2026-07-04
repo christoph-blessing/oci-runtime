@@ -254,6 +254,10 @@ pub fn load(id: &str) -> Result<State, StateError> {
     Ok(state)
 }
 
+pub fn exists(id: &str) -> bool {
+    state_dir(id).join("state.json").exists()
+}
+
 pub struct StateGuard {
     dir: PathBuf,
     confirmed: bool,
