@@ -27,10 +27,10 @@ pub fn run() -> Result<(), CliError> {
     match result {
         Ok(_) => std::process::exit(0),
 
-        Err(CliError::Create(CreateError::AlreadyExists(ref id))) => {
+        Err(CliError::Create(CreateError::State(StateError::AlreadyExists(ref id)))) => {
             eprintln!("container already exists: {}", id);
         }
-        Err(CliError::Create(CreateError::ConfigNotFound(ref path))) => {
+        Err(CliError::Create(CreateError::Config(ConfigError::NotFound(ref path)))) => {
             eprintln!("config not found: {}", path.display());
         }
         Err(CliError::Create(CreateError::ShimExitedEarly)) => {
