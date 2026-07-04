@@ -36,9 +36,6 @@ pub fn run() -> Result<(), CliError> {
         Err(CliError::Create(CreateError::ShimExitedEarly)) => {
             eprintln!("shim exited without becoming ready");
         }
-        Err(CliError::Create(CreateError::ShimReportedFailure)) => {
-            eprintln!("shim reported failure during setup");
-        }
 
         Err(CliError::Start(StartError::State(StateError::NotFound(ref id)))) => {
             eprintln!("container not found: {}", id);

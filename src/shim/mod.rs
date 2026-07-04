@@ -14,6 +14,7 @@ use crate::{
         error::ConfigError,
         validated::{Config, IdMappingConfig},
     },
+    create::{ALREADY_EXISTS, CONFIG_NOT_FOUND, READY},
     shim::child::ChildError,
     state::{Creating, ExitReason, State, StateError, StateGuard, Stoppable},
 };
@@ -31,16 +32,20 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let signal_guard = ReadySignalGuard::new(ready_fd);
     let child_guard = match setup(id, bundle) {
         Ok(child_guard) => {
-            let mut buf = [1u8; 1];
-            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &mut buf)?;
+            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &[READY])?;
             signal_guard.confirm();
             child_guard
         }
-        Err(e) => {
-            let mut buf = [0u8; 1];
-            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &mut buf)?;
+        Err(error) => {
+            let signal = match error {
+                ShimError::State(StateError::AlreadyExists(_)) => ALREADY_EXISTS,
+                ShimError::Config(ConfigError::NotFound(_)) => CONFIG_NOT_FOUND,
+                other => panic!("cannot convert error to signal: {:?}", other),
+            };
+
+            nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &[signal])?;
             signal_guard.confirm();
-            return Err(e);
+            return Err(error);
         }
     };
 
