@@ -241,17 +241,6 @@ fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
         .collect()
 }
 
-fn send_done_signal(done_fd: i32, is_success: bool) -> Result<(), ShimError> {
-    let mut buf;
-    if is_success {
-        buf = [1u8; 1];
-    } else {
-        buf = [0u8; 1];
-    }
-    nix::unistd::write(unsafe { BorrowedFd::borrow_raw(done_fd) }, &mut buf)?;
-    Ok(())
-}
-
 #[derive(Debug)]
 pub enum ShimError {
     State(StateError),
