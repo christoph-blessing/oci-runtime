@@ -245,7 +245,7 @@ pub fn persist(state: &State) -> Result<(), StateError> {
 pub fn load(id: &str) -> Result<State, StateError> {
     let json = std::fs::read_to_string(state_dir(id).join("state.json")).map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
-            StateError::NotFound(e.to_string())
+            StateError::NotFound(id.to_string())
         } else {
             StateError::Io(e)
         }
