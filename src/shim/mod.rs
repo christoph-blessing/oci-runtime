@@ -95,14 +95,13 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     };
     child_guard.confirm();
 
-    let running = match crate::state::load(id)? {
-        State::Running(r) => r,
-        other => panic!("unexpected state: {}", other.as_string()),
-    };
-
     match status {
         WaitStatus::Exited(_, code) => {
-            let stopped = running.stop(code);
+            let stopped = match crate::state::load(id)? {
+                State::Created(c) => c.stop(code),
+                State::Running(r) => r.stop(code),
+                other => panic!("unexpected state: {}", other.as_string()),
+            };
             crate::state::persist(&stopped.into())?;
             match code {
                 EXIT_OK => Ok(()),
