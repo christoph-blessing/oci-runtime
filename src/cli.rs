@@ -51,7 +51,7 @@ pub fn run() -> Result<(), CliError> {
             eprintln!("invalid signal");
         }
         Err(CliError::Kill(KillError::NotKillable(ref state))) => {
-            eprintln!("unexpected state: {}", state)
+            eprintln!("cannot kill container in state {}", state)
         }
 
         Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::NotFound(
