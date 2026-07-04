@@ -97,18 +97,17 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
 
     match status {
         WaitStatus::Exited(_, code) => {
-            let stopped = match crate::state::load(id)? {
-                State::Created(c) => c.stop(ExitReason::Exited(code)),
-                State::Running(r) => r.stop(ExitReason::Exited(code)),
-                other => panic!("unexpected state: {}", other.as_string()),
-            };
-            crate::state::persist(&stopped.into())?;
+            stop(id, ExitReason::Exited(code))?;
             match code {
                 EXIT_OK => Ok(()),
                 EXIT_SYSCALL => Err(ShimError::ChildSyscall),
                 EXIT_IO => Err(ShimError::ChildIo),
                 other => panic!("unexpected exit code: {}", other),
             }
+        }
+        WaitStatus::Signaled(_, signal, _) => {
+            stop(id, ExitReason::Signaled(signal))?;
+            Ok(())
         }
         other => panic!("unexpected wait status: {:?}", other),
     }
@@ -239,6 +238,16 @@ fn create_id_map_contents(mappings: &[IdMappingConfig]) -> String {
         .iter()
         .map(|m| format!("{} {} {}\n", m.container_id, m.host_id, m.size))
         .collect()
+}
+
+fn stop(id: &str, exit_reason: ExitReason) -> Result<(), ShimError> {
+    let stopped = match crate::state::load(id)? {
+        State::Created(c) => c.stop(exit_reason),
+        State::Running(r) => r.stop(exit_reason),
+        other => panic!("unexpected state: {}", other.as_string()),
+    };
+    crate::state::persist(&stopped.into())?;
+    Ok(())
 }
 
 #[derive(Debug)]

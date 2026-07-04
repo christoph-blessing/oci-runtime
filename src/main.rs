@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod create;
+mod kill;
 mod legacy;
 mod shim;
 mod start;

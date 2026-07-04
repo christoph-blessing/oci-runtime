@@ -1,6 +1,6 @@
 use crate::{
-    config::error::ConfigError, create::CreateError, shim::ShimError, start::StartError,
-    state::StateError,
+    config::error::ConfigError, create::CreateError, kill::KillError, shim::ShimError,
+    start::StartError, state::StateError,
 };
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -14,6 +14,10 @@ pub fn run() -> Result<(), CliError> {
         } => crate::create::run(container_id, bundle_path).map_err(|e| e.into()),
         Commands::Start { container_id } => crate::start::run(container_id).map_err(|e| e.into()),
         Commands::Legacy { bundle_path } => crate::legacy::main(bundle_path).map_err(|e| e.into()),
+        Commands::Kill {
+            container_id,
+            signal,
+        } => crate::kill::run(container_id, signal).map_err(|e| e.into()),
         Commands::Shim {
             container_id,
             bundle_path,
@@ -38,6 +42,16 @@ pub fn run() -> Result<(), CliError> {
         }
         Err(CliError::Start(StartError::NotCreated(ref state))) => {
             eprintln!("cannot start container in state {}", state)
+        }
+
+        Err(CliError::Kill(KillError::State(StateError::NotFound(ref id)))) => {
+            eprintln!("container not found: {}", id)
+        }
+        Err(CliError::Kill(KillError::InvalidSignal)) => {
+            eprintln!("invalid signal");
+        }
+        Err(CliError::Kill(KillError::NotKillable(ref state))) => {
+            eprintln!("unexpected state: {}", state)
         }
 
         Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::NotFound(
@@ -79,6 +93,10 @@ enum Commands {
     Start {
         container_id: String,
     },
+    Kill {
+        container_id: String,
+        signal: String,
+    },
     #[command(hide = true, name = "__shim")]
     Shim {
         container_id: String,
@@ -91,6 +109,7 @@ enum Commands {
 pub enum CliError {
     Create(CreateError),
     Start(StartError),
+    Kill(KillError),
     Shim(ShimError),
 }
 
@@ -103,6 +122,12 @@ impl From<CreateError> for CliError {
 impl From<StartError> for CliError {
     fn from(value: StartError) -> Self {
         CliError::Start(value)
+    }
+}
+
+impl From<KillError> for CliError {
+    fn from(value: KillError) -> Self {
+        Self::Kill(value)
     }
 }
 
