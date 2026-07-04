@@ -3,7 +3,7 @@ use nix::fcntl::{FcntlArg, FdFlag};
 use std::{
     io::{self, Read},
     os::fd::AsRawFd,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 
@@ -13,6 +13,7 @@ pub enum CreateError {
     Io(io::Error),
     Syscall(nix::Error),
     AlreadyExists(String),
+    ConfigNotFound(PathBuf),
     ShimExitedEarly,
     ShimReportedFailure,
 }
@@ -38,6 +39,11 @@ impl From<nix::Error> for CreateError {
 pub fn run(container_id: &str, bundle_path: &Path) -> Result<(), CreateError> {
     if crate::state::exists(container_id) {
         return Err(CreateError::AlreadyExists(container_id.to_string()));
+    }
+
+    let config_path = bundle_path.join("config.json");
+    if !config_path.exists() {
+        return Err(CreateError::ConfigNotFound(config_path));
     }
 
     let (mut recv_shim_done, send_shim_done) = std::io::pipe()?;

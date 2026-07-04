@@ -30,6 +30,9 @@ pub fn run() -> Result<(), CliError> {
         Err(CliError::Create(CreateError::AlreadyExists(ref id))) => {
             eprintln!("container already exists: {}", id);
         }
+        Err(CliError::Create(CreateError::ConfigNotFound(ref path))) => {
+            eprintln!("config not found: {}", path.display());
+        }
         Err(CliError::Create(CreateError::ShimExitedEarly)) => {
             eprintln!("shim exited without becoming ready");
         }
