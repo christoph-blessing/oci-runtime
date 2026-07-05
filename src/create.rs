@@ -1,6 +1,7 @@
 use crate::{config::error::ConfigError, state::StateError};
 use nix::fcntl::{FcntlArg, FdFlag};
 use std::{
+    fmt::Display,
     io::{self, PipeReader, Read},
     os::fd::AsRawFd,
     path::Path,
@@ -40,6 +41,19 @@ impl From<nix::Error> for CreateError {
     }
 }
 
+impl Display for CreateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ShimExitedEarly => write!(f, "shim exited early"),
+            Self::ShimReported(e) => write!(f, "shim reported: {}", e),
+            Self::Io(e) => write!(f, "io error: {}", e),
+            Self::Syscall(e) => write!(f, "syscall error: {}", e),
+            Self::Config(e) => write!(f, "config error: {}", e),
+            Self::State(e) => write!(f, "state error: {}", e),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ShimReportedError {
     AlreadyExists,
@@ -55,6 +69,17 @@ impl ShimReportedError {
             CONFIG_NOT_FOUND => Self::ConfigNotFound,
             CONFIG_PARSE => Self::ConfigParse,
             _ => Self::UnexpectedExit,
+        }
+    }
+}
+
+impl Display for ShimReportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyExists => write!(f, "container already exists"),
+            Self::ConfigNotFound => write!(f, "config not found"),
+            Self::ConfigParse => write!(f, "malformed config"),
+            Self::UnexpectedExit => write!(f, "unexpected exit"),
         }
     }
 }

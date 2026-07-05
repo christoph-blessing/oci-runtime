@@ -6,7 +6,6 @@ use nix::sched::CloneFlags;
 use nix::sys::resource::Resource;
 use semver::Version;
 use semver::VersionReq;
-use std::fmt::Display;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -422,16 +421,6 @@ impl AbsolutePath {
 
     pub fn as_path(&self) -> &Path {
         self.0.as_path()
-    }
-}
-
-impl Display for ValidationErrors {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut text = String::new();
-        for error in &self.0 {
-            text.push_str(format!("    - {}\n", error).as_str());
-        }
-        write!(f, "config validation failed:\n{}", text)
     }
 }
 

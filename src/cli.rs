@@ -1,13 +1,6 @@
-use crate::{
-    config::error::ConfigError,
-    create::{CreateError, ShimReportedError},
-    kill::KillError,
-    shim::ShimError,
-    start::StartError,
-    state::StateError,
-};
+use crate::{create::CreateError, kill::KillError, shim::ShimError, start::StartError};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::{fmt::Display, path::PathBuf};
 
 pub fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
@@ -31,39 +24,8 @@ pub fn run() -> Result<(), CliError> {
     match result {
         Ok(_) => std::process::exit(0),
 
-        Err(CliError::Create(CreateError::State(StateError::AlreadyExists(ref id)))) => {
-            eprintln!("container already exists: {}", id);
-        }
-        Err(CliError::Create(CreateError::Config(ConfigError::NotFound(ref path)))) => {
-            eprintln!("config not found: {}", path.display());
-        }
-        Err(CliError::Create(CreateError::ShimExitedEarly)) => {
-            eprintln!("shim exited without becoming ready");
-        }
-        Err(CliError::Create(CreateError::ShimReported(ShimReportedError::ConfigParse))) => {
-            eprintln!("shim encountered error during config parsing")
-        }
-
-        Err(CliError::Start(StartError::State(StateError::NotFound(ref id)))) => {
-            eprintln!("container not found: {}", id);
-        }
-        Err(CliError::Start(StartError::NotCreated(ref state))) => {
-            eprintln!("cannot start container in state {}", state)
-        }
-
-        Err(CliError::Kill(KillError::State(StateError::NotFound(ref id)))) => {
-            eprintln!("container not found: {}", id)
-        }
-        Err(CliError::Kill(KillError::InvalidSignal)) => {
-            eprintln!("invalid signal");
-        }
-        Err(CliError::Kill(KillError::NotKillable(ref state))) => {
-            eprintln!("cannot kill container in state {}", state)
-        }
-
-        Err(_) => {
-            println!("{:?}", result);
-        }
+        Err(CliError::Shim(_)) => {}
+        Err(ref e) => eprintln!("Error: {}", e),
     }
     result
 }
@@ -128,5 +90,16 @@ impl From<KillError> for CliError {
 impl From<ShimError> for CliError {
     fn from(value: ShimError) -> Self {
         Self::Shim(value)
+    }
+}
+
+impl Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Create(e) => write!(f, "create error: {}", e),
+            Self::Start(e) => write!(f, "start error: {}", e),
+            Self::Kill(e) => write!(f, "kill error: {}", e),
+            Self::Shim(e) => write!(f, "shim error: {}", e),
+        }
     }
 }

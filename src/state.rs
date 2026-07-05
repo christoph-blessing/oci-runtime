@@ -1,10 +1,9 @@
+use std::fmt::Display;
 use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
 
 use nix::sys::signal::Signal;
 use serde::{Deserialize, Serialize};
-
-use crate::config::error::ConfigError;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
@@ -195,7 +194,6 @@ pub enum StateError {
     Json(serde_json::Error),
     Io(io::Error),
     Syscall(nix::Error),
-    Config(ConfigError),
 }
 
 impl From<serde_json::Error> for StateError {
@@ -216,9 +214,15 @@ impl From<nix::Error> for StateError {
     }
 }
 
-impl From<ConfigError> for StateError {
-    fn from(value: ConfigError) -> Self {
-        StateError::Config(value)
+impl Display for StateError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(id) => write!(f, "container not found: {}", id),
+            Self::AlreadyExists(id) => write!(f, "container already exists: {}", id),
+            Self::Json(e) => write!(f, "JSON error: {}", e),
+            Self::Io(e) => write!(f, "IO error: {}", e),
+            Self::Syscall(e) => write!(f, "syscall error: {}", e),
+        }
     }
 }
 

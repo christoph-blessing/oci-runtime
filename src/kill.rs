@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Display, str::FromStr};
 
 use nix::{sys::signal::Signal, unistd::Pid};
 
@@ -36,5 +36,16 @@ impl From<nix::Error> for KillError {
 impl From<StateError> for KillError {
     fn from(value: StateError) -> Self {
         Self::State(value)
+    }
+}
+
+impl Display for KillError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidSignal => write!(f, "invalid signal"),
+            Self::NotKillable(s) => write!(f, "cannot kill container in state {}", s),
+            Self::Syscall(e) => write!(f, "syscall error: {}", e),
+            Self::State(e) => write!(f, "state error: {}", e),
+        }
     }
 }

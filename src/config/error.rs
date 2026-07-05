@@ -21,8 +21,29 @@ impl From<ValidationErrors> for ConfigError {
     }
 }
 
+impl Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(p) => write!(f, "config not found: {}", p.display()),
+            Self::Validation(e) => write!(f, "{}", e),
+            Self::Io(e) => write!(f, "IO error: {}", e),
+            Self::Parse(e) => write!(f, "parse error: {}", e),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ValidationErrors(pub Vec<ValidationError>);
+
+impl Display for ValidationErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut text = String::new();
+        for error in &self.0 {
+            text.push_str(format!("config validation failed: {}\n", error).as_str());
+        }
+        write!(f, "{}", text)
+    }
+}
 
 #[derive(Debug)]
 pub enum ValidationError {

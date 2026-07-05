@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io,
     os::fd::{BorrowedFd, IntoRawFd},
     path::{Path, PathBuf},
@@ -330,5 +331,21 @@ impl From<nix::Error> for ShimError {
 impl From<io::Error> for ShimError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
+    }
+}
+
+impl Display for ShimError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::State(e) => write!(f, "state error: {}", e),
+            Self::Config(e) => write!(f, "config error:{}", e),
+            Self::Syscall(e) => write!(f, "syscall error: {}", e),
+            Self::Io(e) => write!(f, "i/o error: {}", e),
+            Self::ChildSyscall => write!(f, "child encountered syscall error"),
+            Self::ChildIo => write!(f, "child encountered i/o error"),
+            Self::ChildNulByte => write!(f, "child encountered nul byte"),
+            Self::ChildCapabilities => write!(f, "child encountered capabilities error"),
+            Self::ChildExecutableNotFound => write!(f, "child could not find executable"),
+        }
     }
 }

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     fs::OpenOptions,
     io::{self, Write},
     path::Path,
@@ -41,5 +42,15 @@ impl From<StateError> for StartError {
 impl From<io::Error> for StartError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
+    }
+}
+
+impl Display for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotCreated(s) => write!(f, "cannot start container in state {}", s),
+            Self::State(e) => write!(f, "state error: {}", e),
+            Self::Io(e) => write!(f, "IO error: {}", e),
+        }
     }
 }
