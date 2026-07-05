@@ -94,13 +94,15 @@ fn setup(id: &str, bundle: &Path) -> Result<ChildGuard, ShimError> {
             &start_fifo_path,
         ) {
             Ok(_) => 0,
-            Err(e) => match e {
-                ChildError::Syscall(_) => 2,
-                ChildError::Io(_) => 3,
-                ChildError::NulByte(_) => 4,
-                ChildError::Capabilities(_) => 5,
-                ChildError::ExecutableNotFound => 6,
-            },
+            Err(e) => {
+                (match e {
+                    ChildError::Syscall(_) => EXIT_SYSCALL,
+                    ChildError::Io(_) => EXIT_IO,
+                    ChildError::NulByte(_) => EXIT_NUL_BYTE,
+                    ChildError::Capabilities(_) => EXIT_CAPS,
+                    ChildError::ExecutableNotFound => EXIT_EXEC_NOT_FOUND,
+                }) as isize
+            }
         }
     });
     let mut stack = vec![0u8; STACK_SIZE];
