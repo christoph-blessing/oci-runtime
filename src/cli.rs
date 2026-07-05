@@ -10,7 +10,6 @@ pub fn run() -> Result<(), CliError> {
             bundle_path,
         } => crate::create::run(container_id, bundle_path).map_err(|e| e.into()),
         Commands::Start { container_id } => crate::start::run(container_id).map_err(|e| e.into()),
-        Commands::Legacy { bundle_path } => crate::legacy::main(bundle_path).map_err(|e| e.into()),
         Commands::Kill {
             container_id,
             signal,
@@ -45,9 +44,6 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    Legacy {
-        bundle_path: PathBuf,
-    },
     Create {
         container_id: String,
         bundle_path: PathBuf,
