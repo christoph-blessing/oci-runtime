@@ -23,11 +23,11 @@ use crate::{
 pub mod child;
 
 const STACK_SIZE: usize = 1024 * 1024;
-const EXIT_SYSCALL: i32 = 2;
-const EXIT_IO: i32 = 3;
-const EXIT_NUL_BYTE: i32 = 4;
-const EXIT_CAPS: i32 = 5;
-const EXIT_EXEC_NOT_FOUND: i32 = 6;
+const EXIT_SYSCALL: u8 = 2;
+const EXIT_IO: u8 = 3;
+const EXIT_NUL_BYTE: u8 = 4;
+const EXIT_CAPS: u8 = 5;
+const EXIT_EXEC_NOT_FOUND: u8 = 6;
 
 pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
     let signal_guard = ReadySignalGuard::new(ready_fd);
@@ -126,15 +126,9 @@ fn setup(id: &str, bundle: &Path) -> Result<ChildGuard, ShimError> {
                 WaitStatus::Exited(_, code) => code,
                 other => panic!("unexpected wait status: {:?}", other),
             };
-            let err = match code {
-                EXIT_SYSCALL => ShimError::ChildSyscall,
-                EXIT_IO => ShimError::ChildIo,
-                EXIT_NUL_BYTE => ShimError::ChildNulByte,
-                EXIT_CAPS => ShimError::ChildCapabilities,
-                EXIT_EXEC_NOT_FOUND => ShimError::ChildExecutableNotFound,
-                other => panic!("unexpected exit code: {}", other),
-            };
-            return Err(err);
+            return Err(ShimError::ChildReported(ChildReportedError::from_code(
+                code as u8,
+            )));
         }
     };
 
@@ -303,11 +297,7 @@ pub enum ShimError {
     Config(ConfigError),
     Syscall(nix::Error),
     Io(io::Error),
-    ChildSyscall,
-    ChildIo,
-    ChildNulByte,
-    ChildCapabilities,
-    ChildExecutableNotFound,
+    ChildReported(ChildReportedError),
 }
 
 impl From<StateError> for ShimError {
@@ -341,11 +331,43 @@ impl Display for ShimError {
             Self::Config(e) => write!(f, "config error:{}", e),
             Self::Syscall(e) => write!(f, "syscall error: {}", e),
             Self::Io(e) => write!(f, "i/o error: {}", e),
-            Self::ChildSyscall => write!(f, "child encountered syscall error"),
-            Self::ChildIo => write!(f, "child encountered i/o error"),
-            Self::ChildNulByte => write!(f, "child encountered nul byte"),
-            Self::ChildCapabilities => write!(f, "child encountered capabilities error"),
-            Self::ChildExecutableNotFound => write!(f, "child could not find executable"),
+            Self::ChildReported(e) => write!(f, "child reported error: {}", e),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ChildReportedError {
+    Syscall,
+    Io,
+    NulByte,
+    Capabilities,
+    ExecutableNotFound,
+    UnexpectedExit(u8),
+}
+
+impl ChildReportedError {
+    fn from_code(code: u8) -> Self {
+        match code {
+            EXIT_SYSCALL => Self::Syscall,
+            EXIT_IO => ChildReportedError::Io,
+            EXIT_NUL_BYTE => ChildReportedError::NulByte,
+            EXIT_CAPS => ChildReportedError::Capabilities,
+            EXIT_EXEC_NOT_FOUND => ChildReportedError::ExecutableNotFound,
+            other => ChildReportedError::UnexpectedExit(other),
+        }
+    }
+}
+
+impl Display for ChildReportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Syscall => write!(f, "syscall error"),
+            Self::Io => write!(f, "i/o error"),
+            Self::NulByte => write!(f, "nul byte error"),
+            Self::Capabilities => write!(f, "capabilities error"),
+            Self::ExecutableNotFound => write!(f, "cannot find executable"),
+            Self::UnexpectedExit(c) => write!(f, "unexpected exit code: {}", c),
         }
     }
 }
