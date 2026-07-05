@@ -13,6 +13,12 @@ pub const READY: u8 = 0;
 pub const ALREADY_EXISTS: u8 = 1;
 pub const CONFIG_NOT_FOUND: u8 = 2;
 pub const CONFIG_PARSE: u8 = 3;
+pub const SYSCALL: u8 = 4;
+pub const IO: u8 = 5;
+pub const CHILD_REPORTED: u8 = 6;
+pub const STATE: u8 = 7;
+pub const CONFIG: u8 = 8;
+pub const VALIDATION: u8 = 9;
 
 #[derive(Debug)]
 pub enum CreateError {
@@ -73,6 +79,12 @@ pub enum ShimReportedError {
     AlreadyExists,
     ConfigNotFound,
     ConfigParse,
+    Syscall,
+    Io,
+    ChildReported,
+    State,
+    Config,
+    Validation,
     UnexpectedExit,
 }
 
@@ -82,6 +94,12 @@ impl ShimReportedError {
             ALREADY_EXISTS => Self::AlreadyExists,
             CONFIG_NOT_FOUND => Self::ConfigNotFound,
             CONFIG_PARSE => Self::ConfigParse,
+            SYSCALL => Self::Syscall,
+            IO => Self::Io,
+            CHILD_REPORTED => Self::ChildReported,
+            STATE => Self::State,
+            CONFIG => Self::Config,
+            VALIDATION => Self::Validation,
             _ => Self::UnexpectedExit,
         }
     }
@@ -93,6 +111,12 @@ impl Display for ShimReportedError {
             Self::AlreadyExists => write!(f, "container already exists"),
             Self::ConfigNotFound => write!(f, "config not found"),
             Self::ConfigParse => write!(f, "malformed config"),
+            Self::Syscall => write!(f, "syscall error"),
+            Self::Io => write!(f, "i/o error"),
+            Self::ChildReported => write!(f, "child reported error"),
+            Self::State => write!(f, "state error"),
+            Self::Config => write!(f, "config error"),
+            Self::Validation => write!(f, "validation error"),
             Self::UnexpectedExit => write!(f, "unexpected exit"),
         }
     }
@@ -104,6 +128,12 @@ impl Error for ShimReportedError {
             Self::AlreadyExists
             | Self::ConfigNotFound
             | Self::ConfigParse
+            | Self::Syscall
+            | Self::Io
+            | Self::Validation
+            | Self::State
+            | Self::ChildReported
+            | Self::Config
             | Self::UnexpectedExit => None,
         }
     }

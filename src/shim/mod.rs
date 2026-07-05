@@ -16,7 +16,10 @@ use crate::{
         error::ConfigError,
         validated::{Config, IdMappingConfig},
     },
-    create::{ALREADY_EXISTS, CONFIG_NOT_FOUND, CONFIG_PARSE, READY},
+    create::{
+        ALREADY_EXISTS, CHILD_REPORTED, CONFIG, CONFIG_NOT_FOUND, CONFIG_PARSE, IO, READY, STATE,
+        SYSCALL, VALIDATION,
+    },
     shim::child::ChildError,
     state::{Creating, ExitReason, State, StateError, StateGuard, Stoppable},
 };
@@ -41,9 +44,14 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
         Err(error) => {
             let signal = match error {
                 ShimError::State(StateError::AlreadyExists(_)) => ALREADY_EXISTS,
+                ShimError::State(_) => STATE,
+                ShimError::ChildReported(_) => CHILD_REPORTED,
                 ShimError::Config(ConfigError::NotFound(_)) => CONFIG_NOT_FOUND,
                 ShimError::Config(ConfigError::Parse(_)) => CONFIG_PARSE,
-                other => panic!("cannot convert error to signal: {:?}", other),
+                ShimError::Config(ConfigError::Validation(_)) => VALIDATION,
+                ShimError::Config(_) => CONFIG,
+                ShimError::Syscall(_) => SYSCALL,
+                ShimError::Io(_) => IO,
             };
 
             nix::unistd::write(unsafe { BorrowedFd::borrow_raw(ready_fd) }, &[signal])?;
