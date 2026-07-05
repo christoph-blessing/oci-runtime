@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     fmt::Display,
     fs::OpenOptions,
     io::{self, Write},
@@ -49,8 +50,18 @@ impl Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotCreated(s) => write!(f, "cannot start container in state {}", s),
-            Self::State(e) => write!(f, "state error: {}", e),
-            Self::Io(e) => write!(f, "IO error: {}", e),
+            Self::State(_) => write!(f, "state error during start"),
+            Self::Io(_) => write!(f, "i/o error during start"),
+        }
+    }
+}
+
+impl Error for StartError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::NotCreated(_) => None,
+            Self::State(e) => Some(e),
+            Self::Io(e) => Some(e),
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::{fmt::Display, str::FromStr};
+use std::{error::Error, fmt::Display, str::FromStr};
 
 use nix::{sys::signal::Signal, unistd::Pid};
 
@@ -44,8 +44,18 @@ impl Display for KillError {
         match self {
             Self::InvalidSignal => write!(f, "invalid signal"),
             Self::NotKillable(s) => write!(f, "cannot kill container in state {}", s),
-            Self::Syscall(e) => write!(f, "syscall error: {}", e),
-            Self::State(e) => write!(f, "state error: {}", e),
+            Self::Syscall(_) => write!(f, "syscall error during kill"),
+            Self::State(_) => write!(f, "state error during kill"),
+        }
+    }
+}
+
+impl Error for KillError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::InvalidSignal | Self::NotKillable(_) => None,
+            Self::Syscall(e) => Some(e),
+            Self::State(e) => Some(e),
         }
     }
 }

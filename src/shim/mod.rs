@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     fmt::Display,
     io,
     os::fd::{BorrowedFd, IntoRawFd},
@@ -329,11 +330,23 @@ impl From<io::Error> for ShimError {
 impl Display for ShimError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::State(e) => write!(f, "state error: {}", e),
-            Self::Config(e) => write!(f, "config error:{}", e),
-            Self::Syscall(e) => write!(f, "syscall error: {}", e),
-            Self::Io(e) => write!(f, "i/o error: {}", e),
-            Self::ChildReported(e) => write!(f, "child reported error: {}", e),
+            Self::State(_) => write!(f, "state error during shim operation"),
+            Self::Config(_) => write!(f, "config error during shim operation"),
+            Self::Syscall(_) => write!(f, "syscall error during shim operation"),
+            Self::Io(_) => write!(f, "i/o error during shim operation"),
+            Self::ChildReported(_) => write!(f, "child reported error during shim operation"),
+        }
+    }
+}
+
+impl Error for ShimError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::State(e) => Some(e),
+            Self::Config(e) => Some(e),
+            Self::Syscall(e) => Some(e),
+            Self::Io(e) => Some(e),
+            Self::ChildReported(e) => Some(e),
         }
     }
 }
@@ -370,6 +383,19 @@ impl Display for ChildReportedError {
             Self::Capabilities => write!(f, "capabilities error"),
             Self::ExecutableNotFound => write!(f, "cannot find executable"),
             Self::UnexpectedExit(c) => write!(f, "unexpected exit code: {}", c),
+        }
+    }
+}
+
+impl Error for ChildReportedError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Syscall
+            | Self::Io
+            | Self::NulByte
+            | Self::Capabilities
+            | Self::ExecutableNotFound
+            | Self::UnexpectedExit(_) => None,
         }
     }
 }

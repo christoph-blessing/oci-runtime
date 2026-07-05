@@ -1,6 +1,6 @@
 use crate::{create::CreateError, kill::KillError, shim::ShimError, start::StartError};
 use clap::{Parser, Subcommand};
-use std::{fmt::Display, path::PathBuf};
+use std::{error::Error, fmt::Display, path::PathBuf};
 
 pub fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
@@ -22,10 +22,16 @@ pub fn run() -> Result<(), CliError> {
         } => crate::shim::run(container_id, bundle_path, *done_fd).map_err(|e| e.into()),
     };
     match result {
-        Ok(_) => std::process::exit(0),
-
+        Ok(_) => {}
         Err(CliError::Shim(_)) => {}
-        Err(ref e) => eprintln!("Error: {}", e),
+        Err(ref e) => {
+            eprintln!("error: {}", e);
+            let mut source = e.source();
+            while let Some(error) = source {
+                eprintln!("  caused by: {}", error);
+                source = error.source()
+            }
+        }
     }
     result
 }
@@ -96,10 +102,21 @@ impl From<ShimError> for CliError {
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Create(e) => write!(f, "create error: {}", e),
-            Self::Start(e) => write!(f, "start error: {}", e),
-            Self::Kill(e) => write!(f, "kill error: {}", e),
-            Self::Shim(e) => write!(f, "shim error: {}", e),
+            Self::Create(_) => write!(f, "failed to create container"),
+            Self::Start(_) => write!(f, "failed to start container"),
+            Self::Kill(_) => write!(f, "failed to kill container"),
+            Self::Shim(_) => write!(f, "failed to run shim"),
+        }
+    }
+}
+
+impl Error for CliError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Create(e) => Some(e),
+            Self::Start(e) => Some(e),
+            Self::Kill(e) => Some(e),
+            Self::Shim(e) => Some(e),
         }
     }
 }

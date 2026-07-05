@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt::Display;
 use std::path::Path;
 use std::{collections::HashMap, io, path::PathBuf};
@@ -219,9 +220,20 @@ impl Display for StateError {
         match self {
             Self::NotFound(id) => write!(f, "container not found: {}", id),
             Self::AlreadyExists(id) => write!(f, "container already exists: {}", id),
-            Self::Json(e) => write!(f, "JSON error: {}", e),
-            Self::Io(e) => write!(f, "IO error: {}", e),
-            Self::Syscall(e) => write!(f, "syscall error: {}", e),
+            Self::Json(_) => write!(f, "JSON error during state operation"),
+            Self::Io(_) => write!(f, "i/o error during state operation"),
+            Self::Syscall(_) => write!(f, "syscall error during state operation"),
+        }
+    }
+}
+
+impl Error for StateError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::NotFound(_) | Self::AlreadyExists(_) => None,
+            Self::Json(e) => Some(e),
+            Self::Io(e) => Some(e),
+            Self::Syscall(e) => Some(e),
         }
     }
 }

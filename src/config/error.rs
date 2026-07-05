@@ -1,5 +1,5 @@
 use super::raw::NamespaceKind;
-use std::{fmt::Display, io, path::PathBuf};
+use std::{error::Error, fmt::Display, io, path::PathBuf};
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -26,8 +26,19 @@ impl Display for ConfigError {
         match self {
             Self::NotFound(p) => write!(f, "config not found: {}", p.display()),
             Self::Validation(e) => write!(f, "{}", e),
-            Self::Io(e) => write!(f, "IO error: {}", e),
-            Self::Parse(e) => write!(f, "parse error: {}", e),
+            Self::Io(_) => write!(f, "i/o error during config operation"),
+            Self::Parse(_) => write!(f, "parse error during config operation"),
+        }
+    }
+}
+
+impl Error for ConfigError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::NotFound(_) => None,
+            Self::Validation(e) => Some(e),
+            Self::Io(e) => Some(e),
+            Self::Parse(e) => Some(e),
         }
     }
 }
@@ -42,6 +53,12 @@ impl Display for ValidationErrors {
             text.push_str(format!("config validation failed: {}\n", error).as_str());
         }
         write!(f, "{}", text)
+    }
+}
+
+impl Error for ValidationErrors {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
     }
 }
 

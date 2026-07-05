@@ -1,6 +1,7 @@
 use crate::{config::error::ConfigError, state::StateError};
 use nix::fcntl::{FcntlArg, FdFlag};
 use std::{
+    error::Error,
     fmt::Display,
     io::{self, PipeReader, Read},
     os::fd::AsRawFd,
@@ -45,11 +46,24 @@ impl Display for CreateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ShimExitedEarly => write!(f, "shim exited early"),
-            Self::ShimReported(e) => write!(f, "shim reported: {}", e),
-            Self::Io(e) => write!(f, "io error: {}", e),
-            Self::Syscall(e) => write!(f, "syscall error: {}", e),
-            Self::Config(e) => write!(f, "config error: {}", e),
-            Self::State(e) => write!(f, "state error: {}", e),
+            Self::ShimReported(_) => write!(f, "shim reported error"),
+            Self::Io(_) => write!(f, "i/o error during creation"),
+            Self::Syscall(_) => write!(f, "syscall error during creation"),
+            Self::Config(_) => write!(f, "config error during creation"),
+            Self::State(_) => write!(f, "state error during creation"),
+        }
+    }
+}
+
+impl Error for CreateError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::State(e) => Some(e),
+            Self::Config(e) => Some(e),
+            Self::Io(e) => Some(e),
+            Self::Syscall(e) => Some(e),
+            Self::ShimExitedEarly => None,
+            Self::ShimReported(e) => Some(e),
         }
     }
 }
@@ -80,6 +94,17 @@ impl Display for ShimReportedError {
             Self::ConfigNotFound => write!(f, "config not found"),
             Self::ConfigParse => write!(f, "malformed config"),
             Self::UnexpectedExit => write!(f, "unexpected exit"),
+        }
+    }
+}
+
+impl Error for ShimReportedError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::AlreadyExists
+            | Self::ConfigNotFound
+            | Self::ConfigParse
+            | Self::UnexpectedExit => None,
         }
     }
 }
