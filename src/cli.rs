@@ -61,19 +61,6 @@ pub fn run() -> Result<(), CliError> {
             eprintln!("cannot kill container in state {}", state)
         }
 
-        Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::NotFound(
-            ref path,
-        ))))) => {
-            eprintln!("config not found: {}", path.display());
-        }
-        Err(CliError::Shim(ShimError::State(StateError::AlreadyExists(ref id)))) => {
-            eprintln!("container already exists: {}", id);
-        }
-        Err(CliError::Shim(ShimError::State(StateError::Config(ConfigError::Parse(
-            ref error,
-        ))))) => {
-            eprintln!("failed to parse config: {}", error)
-        }
         Err(_) => {
             println!("{:?}", result);
         }
