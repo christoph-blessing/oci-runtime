@@ -14,7 +14,7 @@ use crate::{
         error::ConfigError,
         validated::{Config, IdMappingConfig},
     },
-    create::{ALREADY_EXISTS, CONFIG_NOT_FOUND, READY},
+    create::{ALREADY_EXISTS, CONFIG_NOT_FOUND, CONFIG_PARSE, READY},
     shim::child::ChildError,
     state::{Creating, ExitReason, State, StateError, StateGuard, Stoppable},
 };
@@ -40,6 +40,7 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
             let signal = match error {
                 ShimError::State(StateError::AlreadyExists(_)) => ALREADY_EXISTS,
                 ShimError::Config(ConfigError::NotFound(_)) => CONFIG_NOT_FOUND,
+                ShimError::Config(ConfigError::Parse(_)) => CONFIG_PARSE,
                 other => panic!("cannot convert error to signal: {:?}", other),
             };
 

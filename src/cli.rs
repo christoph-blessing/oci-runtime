@@ -1,6 +1,10 @@
 use crate::{
-    config::error::ConfigError, create::CreateError, kill::KillError, shim::ShimError,
-    start::StartError, state::StateError,
+    config::error::ConfigError,
+    create::{CreateError, ShimReportedError},
+    kill::KillError,
+    shim::ShimError,
+    start::StartError,
+    state::StateError,
 };
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -35,6 +39,9 @@ pub fn run() -> Result<(), CliError> {
         }
         Err(CliError::Create(CreateError::ShimExitedEarly)) => {
             eprintln!("shim exited without becoming ready");
+        }
+        Err(CliError::Create(CreateError::ShimReported(ShimReportedError::ConfigParse))) => {
+            eprintln!("shim encountered error during config parsing")
         }
 
         Err(CliError::Start(StartError::State(StateError::NotFound(ref id)))) => {

@@ -10,6 +10,7 @@ use std::{
 pub const READY: u8 = 0;
 pub const ALREADY_EXISTS: u8 = 1;
 pub const CONFIG_NOT_FOUND: u8 = 2;
+pub const CONFIG_PARSE: u8 = 3;
 
 #[derive(Debug)]
 pub enum CreateError {
@@ -43,6 +44,7 @@ impl From<nix::Error> for CreateError {
 pub enum ShimReportedError {
     AlreadyExists,
     ConfigNotFound,
+    ConfigParse,
     UnexpectedExit,
 }
 
@@ -51,6 +53,7 @@ impl ShimReportedError {
         match byte {
             ALREADY_EXISTS => Self::AlreadyExists,
             CONFIG_NOT_FOUND => Self::ConfigNotFound,
+            CONFIG_PARSE => Self::ConfigParse,
             _ => Self::UnexpectedExit,
         }
     }
