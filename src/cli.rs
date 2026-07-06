@@ -6,28 +6,7 @@ use clap::{Parser, Subcommand};
 use std::{error::Error, fmt::Display, path::PathBuf};
 
 pub fn run() -> Result<(), CliError> {
-    let cli = Cli::parse();
-    let result: Result<(), CliError> = match &cli.command {
-        Commands::Create {
-            container_id,
-            bundle_path,
-        } => crate::cmd::create::run(container_id, bundle_path).map_err(|e| e.into()),
-        Commands::Start { container_id } => {
-            crate::cmd::start::run(container_id).map_err(|e| e.into())
-        }
-        Commands::Kill {
-            container_id,
-            signal,
-        } => crate::cmd::kill::run(container_id, signal).map_err(|e| e.into()),
-        Commands::Shim {
-            container_id,
-            bundle_path,
-            done_fd,
-        } => crate::shim::run(container_id, bundle_path, *done_fd).map_err(|e| e.into()),
-        Commands::Delete { container_id } => {
-            crate::cmd::delete::run(container_id).map_err(|e| e.into())
-        }
-    };
+    let result = dispatch();
     match result {
         Ok(_) => {}
         Err(CliError::Shim(_)) => {}
@@ -41,6 +20,40 @@ pub fn run() -> Result<(), CliError> {
         }
     }
     result
+}
+
+fn dispatch() -> Result<(), CliError> {
+    let cli = Cli::parse();
+    match &cli.command {
+        Commands::Create {
+            container_id,
+            bundle_path,
+        } => {
+            crate::cmd::create::run(container_id, bundle_path)?;
+            println!("created container: {}", container_id)
+        }
+        Commands::Start { container_id } => {
+            crate::cmd::start::run(container_id)?;
+            println!("started container: {}", container_id)
+        }
+        Commands::Kill {
+            container_id,
+            signal,
+        } => {
+            crate::cmd::kill::run(container_id, signal)?;
+            println!("killed container: {}", container_id)
+        }
+        Commands::Delete { container_id } => {
+            crate::cmd::delete::run(container_id)?;
+            println!("deleted container: {}", container_id)
+        }
+        Commands::Shim {
+            container_id,
+            bundle_path,
+            done_fd,
+        } => crate::shim::run(container_id, bundle_path, *done_fd)?,
+    };
+    Ok(())
 }
 
 #[derive(Parser, Debug)]
