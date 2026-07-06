@@ -1,5 +1,6 @@
 use crate::{
-    create::CreateError, delete::DeleteError, kill::KillError, shim::ShimError, start::StartError,
+    cmd::create::CreateError, cmd::delete::DeleteError, cmd::kill::KillError,
+    cmd::start::StartError, shim::ShimError,
 };
 use clap::{Parser, Subcommand};
 use std::{error::Error, fmt::Display, path::PathBuf};
@@ -10,18 +11,22 @@ pub fn run() -> Result<(), CliError> {
         Commands::Create {
             container_id,
             bundle_path,
-        } => crate::create::run(container_id, bundle_path).map_err(|e| e.into()),
-        Commands::Start { container_id } => crate::start::run(container_id).map_err(|e| e.into()),
+        } => crate::cmd::create::run(container_id, bundle_path).map_err(|e| e.into()),
+        Commands::Start { container_id } => {
+            crate::cmd::start::run(container_id).map_err(|e| e.into())
+        }
         Commands::Kill {
             container_id,
             signal,
-        } => crate::kill::run(container_id, signal).map_err(|e| e.into()),
+        } => crate::cmd::kill::run(container_id, signal).map_err(|e| e.into()),
         Commands::Shim {
             container_id,
             bundle_path,
             done_fd,
         } => crate::shim::run(container_id, bundle_path, *done_fd).map_err(|e| e.into()),
-        Commands::Delete { container_id } => crate::delete::run(container_id).map_err(|e| e.into()),
+        Commands::Delete { container_id } => {
+            crate::cmd::delete::run(container_id).map_err(|e| e.into())
+        }
     };
     match result {
         Ok(_) => {}

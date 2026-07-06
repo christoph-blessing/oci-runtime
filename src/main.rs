@@ -1,10 +1,7 @@
 mod cli;
+mod cmd;
 mod config;
-mod create;
-mod delete;
-mod kill;
 mod shim;
-mod start;
 mod state;
 
 fn main() {
