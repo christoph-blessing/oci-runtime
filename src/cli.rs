@@ -1,10 +1,11 @@
 use crate::{
     cmd::{create::CreateError, delete::DeleteError, kill::KillError, start::StartError},
     shim::ShimError,
-    state::StateError,
+    state::{State, StateError},
 };
 use clap::{Parser, Subcommand};
-use std::{error::Error, fmt::Display, path::PathBuf};
+use serde::Serialize;
+use std::{collections::HashMap, error::Error, fmt::Display, path::PathBuf};
 
 pub fn run() -> Result<(), CliError> {
     let result = dispatch();
@@ -50,7 +51,9 @@ fn dispatch() -> Result<(), CliError> {
         }
         Commands::State { container_id } => {
             let state = crate::cmd::state::run(container_id)?;
-            println!("{:?}", state)
+            let oci_state = OCIState::from(state);
+            let json = serde_json::to_string(&oci_state)?;
+            println!("{}", json)
         }
         Commands::Shim {
             container_id,
@@ -103,6 +106,7 @@ pub enum CliError {
     Delete(DeleteError),
     State(StateError),
     Shim(ShimError),
+    Json(serde_json::Error),
 }
 
 impl From<CreateError> for CliError {
@@ -141,6 +145,12 @@ impl From<StateError> for CliError {
     }
 }
 
+impl From<serde_json::Error> for CliError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Json(value)
+    }
+}
+
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -150,6 +160,7 @@ impl Display for CliError {
             Self::Delete(_) => write!(f, "failed to delete container"),
             Self::State(_) => write!(f, "failed to query state"),
             Self::Shim(_) => write!(f, "failed to run shim"),
+            Self::Json(_) => write!(f, "json error during presentation"),
         }
     }
 }
@@ -163,6 +174,68 @@ impl Error for CliError {
             Self::Delete(e) => Some(e),
             Self::State(e) => Some(e),
             Self::Shim(e) => Some(e),
+            Self::Json(e) => Some(e),
         }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OCIState {
+    oci_version: String,
+    id: String,
+    status: OCIStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pid: Option<i32>,
+    bundle: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annotations: Option<HashMap<String, String>>,
+}
+
+impl From<State> for OCIState {
+    fn from(value: State) -> Self {
+        match value {
+            State::Creating(s) => OCIState {
+                oci_version: s.common.oci_version,
+                id: s.common.id,
+                status: OCIStatus::Creating,
+                pid: None,
+                bundle: s.common.bundle,
+                annotations: s.common.annotations,
+            },
+            State::Created(s) => OCIState {
+                oci_version: s.common.oci_version,
+                id: s.common.id,
+                status: OCIStatus::Created,
+                pid: Some(s.pid),
+                bundle: s.common.bundle,
+                annotations: s.common.annotations,
+            },
+            State::Running(s) => OCIState {
+                oci_version: s.common.oci_version,
+                id: s.common.id,
+                status: OCIStatus::Running,
+                pid: Some(s.pid),
+                bundle: s.common.bundle,
+                annotations: s.common.annotations,
+            },
+            State::Stopped(s) => OCIState {
+                oci_version: s.common.oci_version,
+                id: s.common.id,
+                status: OCIStatus::Stopped,
+                pid: None,
+                bundle: s.common.bundle,
+                annotations: s.common.annotations,
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+enum OCIStatus {
+    Creating,
+    Created,
+    Running,
+    Stopped,
 }

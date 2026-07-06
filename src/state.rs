@@ -63,7 +63,7 @@ impl From<Stopped> for State {
 #[serde(rename_all = "camelCase")]
 pub struct Creating {
     #[serde(flatten)]
-    common: Common,
+    pub common: Common,
 }
 
 impl Creating {
@@ -98,7 +98,7 @@ impl Creating {
 #[serde(rename_all = "camelCase")]
 pub struct Created {
     #[serde(flatten)]
-    common: Common,
+    pub common: Common,
     pub pid: i32,
     pub internal: CreatedInternal,
 }
@@ -133,7 +133,7 @@ pub struct CreatedInternal {
 #[serde(rename_all = "camelCase")]
 pub struct Running {
     #[serde(flatten)]
-    common: Common,
+    pub common: Common,
     pub pid: i32,
 }
 
@@ -147,7 +147,7 @@ impl Stoppable for Running {
 #[serde(rename_all = "camelCase")]
 pub struct Stopped {
     #[serde(flatten)]
-    common: Common,
+    pub common: Common,
     internal: StoppedInternal,
 }
 
