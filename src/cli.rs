@@ -73,21 +73,33 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Create a container
     Create {
+        /// Unique identifier for the container
         container_id: String,
+        /// Path to the OCI bundle directory
         bundle_path: PathBuf,
     },
+    /// Execute the user defined process in a created container
     Start {
+        /// Unique identifier for the container
         container_id: String,
     },
+    /// Send the specified signal to the container's init process
     Kill {
+        /// Unique identifier for the container
         container_id: String,
+        /// Signal to be sent to the init process
         signal: String,
     },
+    /// Delete any resources held by the container
     Delete {
+        /// Unique identifier for the container
         container_id: String,
     },
+    /// Output the state of a container
     State {
+        /// Unique identifier for the container
         container_id: String,
     },
     #[command(hide = true, name = "__shim")]
