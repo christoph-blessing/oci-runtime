@@ -29,7 +29,7 @@ fn dispatch() -> Result<(), CliError> {
     match &cli.command {
         Commands::Create {
             container_id,
-            bundle_path,
+            bundle: bundle_path,
         } => {
             crate::cmd::create::run(container_id, bundle_path)?;
             println!("created container: {}", container_id)
@@ -77,8 +77,13 @@ enum Commands {
     Create {
         /// Unique identifier for the container
         container_id: String,
-        /// Path to the OCI bundle directory
-        bundle_path: PathBuf,
+        #[arg(
+            short,
+            long,
+            default_value = ".",
+            help = "Path to the OCI bundle directory"
+        )]
+        bundle: PathBuf,
     },
     /// Execute the user defined process in a created container
     Start {
