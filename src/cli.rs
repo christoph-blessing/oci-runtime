@@ -1,4 +1,6 @@
-use crate::{create::CreateError, kill::KillError, shim::ShimError, start::StartError};
+use crate::{
+    create::CreateError, delete::DeleteError, kill::KillError, shim::ShimError, start::StartError,
+};
 use clap::{Parser, Subcommand};
 use std::{error::Error, fmt::Display, path::PathBuf};
 
@@ -19,6 +21,7 @@ pub fn run() -> Result<(), CliError> {
             bundle_path,
             done_fd,
         } => crate::shim::run(container_id, bundle_path, *done_fd).map_err(|e| e.into()),
+        Commands::Delete { container_id } => crate::delete::run(container_id).map_err(|e| e.into()),
     };
     match result {
         Ok(_) => {}
@@ -55,6 +58,9 @@ enum Commands {
         container_id: String,
         signal: String,
     },
+    Delete {
+        container_id: String,
+    },
     #[command(hide = true, name = "__shim")]
     Shim {
         container_id: String,
@@ -68,6 +74,7 @@ pub enum CliError {
     Create(CreateError),
     Start(StartError),
     Kill(KillError),
+    Delete(DeleteError),
     Shim(ShimError),
 }
 
@@ -95,12 +102,19 @@ impl From<ShimError> for CliError {
     }
 }
 
+impl From<DeleteError> for CliError {
+    fn from(value: DeleteError) -> Self {
+        Self::Delete(value)
+    }
+}
+
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Create(_) => write!(f, "failed to create container"),
             Self::Start(_) => write!(f, "failed to start container"),
             Self::Kill(_) => write!(f, "failed to kill container"),
+            Self::Delete(_) => write!(f, "failed to delete container"),
             Self::Shim(_) => write!(f, "failed to run shim"),
         }
     }
@@ -112,6 +126,7 @@ impl Error for CliError {
             Self::Create(e) => Some(e),
             Self::Start(e) => Some(e),
             Self::Kill(e) => Some(e),
+            Self::Delete(e) => Some(e),
             Self::Shim(e) => Some(e),
         }
     }
