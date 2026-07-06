@@ -1,6 +1,7 @@
 use crate::{
-    cmd::create::CreateError, cmd::delete::DeleteError, cmd::kill::KillError,
-    cmd::start::StartError, shim::ShimError,
+    cmd::{create::CreateError, delete::DeleteError, kill::KillError, start::StartError},
+    shim::ShimError,
+    state::StateError,
 };
 use clap::{Parser, Subcommand};
 use std::{error::Error, fmt::Display, path::PathBuf};
@@ -47,6 +48,10 @@ fn dispatch() -> Result<(), CliError> {
             crate::cmd::delete::run(container_id)?;
             println!("deleted container: {}", container_id)
         }
+        Commands::State { container_id } => {
+            let state = crate::cmd::state::run(container_id)?;
+            println!("{:?}", state)
+        }
         Commands::Shim {
             container_id,
             bundle_path,
@@ -79,6 +84,9 @@ enum Commands {
     Delete {
         container_id: String,
     },
+    State {
+        container_id: String,
+    },
     #[command(hide = true, name = "__shim")]
     Shim {
         container_id: String,
@@ -93,6 +101,7 @@ pub enum CliError {
     Start(StartError),
     Kill(KillError),
     Delete(DeleteError),
+    State(StateError),
     Shim(ShimError),
 }
 
@@ -126,6 +135,12 @@ impl From<DeleteError> for CliError {
     }
 }
 
+impl From<StateError> for CliError {
+    fn from(value: StateError) -> Self {
+        Self::State(value)
+    }
+}
+
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -133,6 +148,7 @@ impl Display for CliError {
             Self::Start(_) => write!(f, "failed to start container"),
             Self::Kill(_) => write!(f, "failed to kill container"),
             Self::Delete(_) => write!(f, "failed to delete container"),
+            Self::State(_) => write!(f, "failed to query state"),
             Self::Shim(_) => write!(f, "failed to run shim"),
         }
     }
@@ -145,6 +161,7 @@ impl Error for CliError {
             Self::Start(e) => Some(e),
             Self::Kill(e) => Some(e),
             Self::Delete(e) => Some(e),
+            Self::State(e) => Some(e),
             Self::Shim(e) => Some(e),
         }
     }
