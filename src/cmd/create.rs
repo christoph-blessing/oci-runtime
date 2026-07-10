@@ -15,10 +15,15 @@ pub const CONFIG_NOT_FOUND: u8 = 2;
 pub const CONFIG_PARSE: u8 = 3;
 pub const SYSCALL: u8 = 4;
 pub const IO: u8 = 5;
-pub const CHILD_REPORTED: u8 = 6;
-pub const STATE: u8 = 7;
-pub const CONFIG: u8 = 8;
-pub const VALIDATION: u8 = 9;
+pub const STATE: u8 = 6;
+pub const CONFIG: u8 = 7;
+pub const VALIDATION: u8 = 8;
+pub const CHILD_EXEC_NOT_FOUND: u8 = 9;
+pub const CHILD_SYSCALL: u8 = 10;
+pub const CHILD_IO: u8 = 11;
+pub const CHILD_NUL_BYTE: u8 = 12;
+pub const CHILD_CAPS: u8 = 13;
+pub const CHILD_UNEXPECTED: u8 = 14;
 
 #[derive(Debug)]
 pub enum CreateError {
@@ -81,7 +86,7 @@ pub enum ShimReportedError {
     ConfigParse,
     Syscall,
     Io,
-    ChildReported,
+    ChildReported(ChildReportedError),
     State,
     Config,
     Validation,
@@ -96,7 +101,8 @@ impl ShimReportedError {
             CONFIG_PARSE => Self::ConfigParse,
             SYSCALL => Self::Syscall,
             IO => Self::Io,
-            CHILD_REPORTED => Self::ChildReported,
+            CHILD_EXEC_NOT_FOUND | CHILD_SYSCALL | CHILD_IO | CHILD_NUL_BYTE | CHILD_CAPS
+            | CHILD_UNEXPECTED => Self::ChildReported(ChildReportedError::from_signal(byte)),
             STATE => Self::State,
             CONFIG => Self::Config,
             VALIDATION => Self::Validation,
@@ -113,7 +119,7 @@ impl Display for ShimReportedError {
             Self::ConfigParse => write!(f, "malformed config"),
             Self::Syscall => write!(f, "syscall error"),
             Self::Io => write!(f, "i/o error"),
-            Self::ChildReported => write!(f, "child reported error"),
+            Self::ChildReported(_) => write!(f, "child reported error"),
             Self::State => write!(f, "state error"),
             Self::Config => write!(f, "config error"),
             Self::Validation => write!(f, "validation error"),
@@ -125,6 +131,7 @@ impl Display for ShimReportedError {
 impl Error for ShimReportedError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::ChildReported(e) => Some(e),
             Self::AlreadyExists
             | Self::ConfigNotFound
             | Self::ConfigParse
@@ -132,9 +139,61 @@ impl Error for ShimReportedError {
             | Self::Io
             | Self::Validation
             | Self::State
-            | Self::ChildReported
             | Self::Config
             | Self::UnexpectedExit => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ChildReportedError {
+    ExecutableNotFound,
+    Syscall,
+    Io,
+    NulByte,
+    Capabilities,
+    ShimUnexpectedSignal,
+    UnexpectedSignal,
+}
+
+impl ChildReportedError {
+    fn from_signal(byte: u8) -> Self {
+        match byte {
+            CHILD_EXEC_NOT_FOUND => Self::ExecutableNotFound,
+            CHILD_SYSCALL => Self::Syscall,
+            CHILD_IO => Self::Io,
+            CHILD_NUL_BYTE => Self::NulByte,
+            CHILD_CAPS => Self::Capabilities,
+            CHILD_UNEXPECTED => Self::ShimUnexpectedSignal,
+            _ => Self::UnexpectedSignal,
+        }
+    }
+}
+
+impl Error for ChildReportedError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::ExecutableNotFound
+            | Self::Syscall
+            | Self::Io
+            | Self::NulByte
+            | Self::Capabilities
+            | Self::ShimUnexpectedSignal
+            | Self::UnexpectedSignal => None,
+        }
+    }
+}
+
+impl Display for ChildReportedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExecutableNotFound => write!(f, "executable not found"),
+            Self::Syscall => write!(f, "syscall error during child setup"),
+            Self::Io => write!(f, "i/o error during child setup"),
+            Self::NulByte => write!(f, "nul byte error during child setup"),
+            Self::Capabilities => write!(f, "capabilities error during child setup"),
+            Self::ShimUnexpectedSignal => write!(f, "shim received unexpected signal from child"),
+            Self::UnexpectedSignal => write!(f, "received unexpected signal from shim"),
         }
     }
 }

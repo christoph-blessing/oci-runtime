@@ -13,8 +13,9 @@ use nix::{
 
 use crate::{
     cmd::create::{
-        ALREADY_EXISTS, CHILD_REPORTED, CONFIG, CONFIG_NOT_FOUND, CONFIG_PARSE, IO, READY, STATE,
-        SYSCALL, VALIDATION,
+        ALREADY_EXISTS, CHILD_CAPS, CHILD_EXEC_NOT_FOUND, CHILD_IO, CHILD_NUL_BYTE, CHILD_SYSCALL,
+        CHILD_UNEXPECTED, CONFIG, CONFIG_NOT_FOUND, CONFIG_PARSE, IO, READY, STATE, SYSCALL,
+        VALIDATION,
     },
     config::{
         error::ConfigError,
@@ -45,7 +46,14 @@ pub fn run(id: &str, bundle: &Path, ready_fd: i32) -> Result<(), ShimError> {
             let signal = match error {
                 ShimError::State(StateError::AlreadyExists(_)) => ALREADY_EXISTS,
                 ShimError::State(_) => STATE,
-                ShimError::ChildReported(_) => CHILD_REPORTED,
+                ShimError::ChildReported(ref e) => match e {
+                    ChildReportedError::ExecutableNotFound => CHILD_EXEC_NOT_FOUND,
+                    ChildReportedError::Syscall => CHILD_SYSCALL,
+                    ChildReportedError::Io => CHILD_IO,
+                    ChildReportedError::NulByte => CHILD_NUL_BYTE,
+                    ChildReportedError::Capabilities => CHILD_CAPS,
+                    ChildReportedError::UnexpectedExit(_) => CHILD_UNEXPECTED,
+                },
                 ShimError::Config(ConfigError::NotFound(_)) => CONFIG_NOT_FOUND,
                 ShimError::Config(ConfigError::Parse(_)) => CONFIG_PARSE,
                 ShimError::Config(ConfigError::Validation(_)) => VALIDATION,
