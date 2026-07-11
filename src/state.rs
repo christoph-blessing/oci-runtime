@@ -148,13 +148,13 @@ impl Stoppable for Running {
 pub struct Stopped {
     #[serde(flatten)]
     pub common: Common,
-    internal: StoppedInternal,
+    pub internal: StoppedInternal,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoppedInternal {
-    exit_reason: ExitReason,
+    pub exit_reason: ExitReason,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

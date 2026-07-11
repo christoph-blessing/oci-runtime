@@ -1,13 +1,15 @@
 use crate::{
-    cmd::{create::CreateError, delete::DeleteError, kill::KillError, start::StartError},
+    cmd::{
+        create::CreateError, delete::DeleteError, kill::KillError, run::RunError, start::StartError,
+    },
     shim::ShimError,
-    state::{State, StateError},
+    state::{ExitReason, State, StateError},
 };
 use clap::{Parser, Subcommand};
 use serde::Serialize;
 use std::{collections::HashMap, error::Error, fmt::Display, path::PathBuf};
 
-pub fn run() -> Result<(), CliError> {
+pub fn run() -> Result<i32, CliError> {
     let result = dispatch();
     match result {
         Ok(_) => {}
@@ -24,7 +26,7 @@ pub fn run() -> Result<(), CliError> {
     result
 }
 
-fn dispatch() -> Result<(), CliError> {
+fn dispatch() -> Result<i32, CliError> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Create {
@@ -32,36 +34,54 @@ fn dispatch() -> Result<(), CliError> {
             bundle: bundle_path,
         } => {
             crate::cmd::create::run(container_id, bundle_path)?;
-            println!("created container: {}", container_id)
+            println!("created container: {}", container_id);
+            Ok(0)
         }
         Commands::Start { container_id } => {
             crate::cmd::start::run(container_id)?;
-            println!("started container: {}", container_id)
+            println!("started container: {}", container_id);
+            Ok(0)
         }
         Commands::Kill {
             container_id,
             signal,
         } => {
             crate::cmd::kill::run(container_id, signal)?;
-            println!("killed container: {}", container_id)
+            println!("killed container: {}", container_id);
+            Ok(0)
         }
         Commands::Delete { container_id } => {
             crate::cmd::delete::run(container_id)?;
-            println!("deleted container: {}", container_id)
+            println!("deleted container: {}", container_id);
+            Ok(0)
         }
         Commands::State { container_id } => {
             let state = crate::cmd::state::run(container_id)?;
             let oci_state = OCIState::from(state);
             let json = serde_json::to_string(&oci_state)?;
-            println!("{}", json)
+            println!("{}", json);
+            Ok(0)
+        }
+        Commands::Run {
+            container_id,
+            bundle,
+        } => {
+            let exit_reason = crate::cmd::run::run(container_id, bundle)?;
+            println!("ran container: {}", container_id);
+            match exit_reason {
+                ExitReason::Exited(code) => Ok(code),
+                ExitReason::Signaled(signal) => Ok(128 + signal as i32),
+            }
         }
         Commands::Shim {
             container_id,
             bundle_path,
             done_fd,
-        } => crate::shim::run(container_id, bundle_path, *done_fd)?,
-    };
-    Ok(())
+        } => {
+            crate::shim::run(container_id, bundle_path, *done_fd)?;
+            Ok(0)
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -107,6 +127,18 @@ enum Commands {
         /// Unique identifier for the container
         container_id: String,
     },
+    /// Create, start and wait for a container
+    Run {
+        /// Unique identifier for the container
+        container_id: String,
+        #[arg(
+            short,
+            long,
+            default_value = ".",
+            help = "Path to the OCI bundle directory"
+        )]
+        bundle: PathBuf,
+    },
     #[command(hide = true, name = "__shim")]
     Shim {
         container_id: String,
@@ -122,6 +154,7 @@ pub enum CliError {
     Kill(KillError),
     Delete(DeleteError),
     State(StateError),
+    Run(RunError),
     Shim(ShimError),
     Json(serde_json::Error),
 }
@@ -168,6 +201,12 @@ impl From<serde_json::Error> for CliError {
     }
 }
 
+impl From<RunError> for CliError {
+    fn from(value: RunError) -> Self {
+        Self::Run(value)
+    }
+}
+
 impl Display for CliError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -176,6 +215,7 @@ impl Display for CliError {
             Self::Kill(_) => write!(f, "failed to kill container"),
             Self::Delete(_) => write!(f, "failed to delete container"),
             Self::State(_) => write!(f, "failed to query state"),
+            Self::Run(_) => write!(f, "failed to run container"),
             Self::Shim(_) => write!(f, "failed to run shim"),
             Self::Json(_) => write!(f, "json error during presentation"),
         }
@@ -190,6 +230,7 @@ impl Error for CliError {
             Self::Kill(e) => Some(e),
             Self::Delete(e) => Some(e),
             Self::State(e) => Some(e),
+            Self::Run(e) => Some(e),
             Self::Shim(e) => Some(e),
             Self::Json(e) => Some(e),
         }

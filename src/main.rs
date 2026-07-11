@@ -6,7 +6,7 @@ mod state;
 
 fn main() {
     match cli::run() {
-        Ok(_) => std::process::exit(0),
+        Ok(code) => std::process::exit(code),
         Err(_) => std::process::exit(1),
     }
 }

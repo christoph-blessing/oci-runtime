@@ -198,7 +198,7 @@ impl Display for ChildReportedError {
     }
 }
 
-pub fn run(container_id: &str, bundle_path: &Path) -> Result<(), CreateError> {
+pub fn run(container_id: &str, bundle_path: &Path) -> Result<u32, CreateError> {
     if crate::state::exists(container_id) {
         return Err(CreateError::State(StateError::AlreadyExists(
             container_id.to_string(),
@@ -214,7 +214,7 @@ pub fn run(container_id: &str, bundle_path: &Path) -> Result<(), CreateError> {
     nix::fcntl::fcntl(&send_shim_done, FcntlArg::F_SETFD(FdFlag::empty()))?;
 
     let program = std::env::current_exe()?;
-    Command::new(program)
+    let child = Command::new(program)
         .arg("__shim")
         .arg(container_id)
         .arg(bundle_path)
@@ -223,7 +223,7 @@ pub fn run(container_id: &str, bundle_path: &Path) -> Result<(), CreateError> {
     drop(send_shim_done);
 
     wait_for_shim(recv_shim_done)?;
-    Ok(())
+    Ok(child.id())
 }
 
 fn wait_for_shim(mut reader: PipeReader) -> Result<(), CreateError> {
